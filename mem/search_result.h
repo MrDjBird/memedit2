@@ -1,10 +1,3 @@
-//
-//  search_result.h
-//  mem
-//
-//  Created by Liu Junqi on 3/27/18.
-//  Copyright © 2018 DeviLeo. All rights reserved.
-//
 
 #ifndef search_result_h
 #define search_result_h
@@ -21,4 +14,4 @@ int compare_value(void *value1, int size1, void *value2, int size2, int type);
 int size_of_type(int type);
 void *value_of_type(const char *value_str, int type, int *value_size);
 
-#endif /* search_result_h */
+#endif

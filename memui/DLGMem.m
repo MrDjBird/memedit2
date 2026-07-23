@@ -1,10 +1,3 @@
-//
-//  DLGMem.m
-//  memui
-//
-//  Created by Liu Junqi on 4/23/18.
-//  Copyright © 2018 DeviLeo. All rights reserved.
-//
 
 #import "DLGMem.h"
 #import "DLGMemUI.h"
@@ -54,7 +47,7 @@ void search_progress_callback(int current, int total, void *user_data) {
 - (void)searchMem:(const char *)value type:(int)type comparison:(int)comparison {
     int size = 0;
     void *v = value_of_type(value, type, &size);
-    
+
     [self.memView updateSearchProgress:0.0];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
@@ -74,11 +67,10 @@ void search_progress_callback(int current, int total, void *user_data) {
     int size = 0;
     void *v = value_of_type(value, type, &size);
     int ret = write_mem(g_task, address, v, size);
-    if (ret == 1) { NSLog(@"Modified successfully."); }
-    else { NSLog(@"Failed to modify. Error: %d", ret); }
+    if (ret == 1) { NSLog(@"modify ok"); }
+    else { NSLog(@"modify no work, error %d", ret); }
 }
 
-#pragma mark - DLGMemUIViewDelegate
 - (void)DLGMemUILaunched:(DLGMemUIView *)view {
     self.memView = view;
 }
@@ -120,7 +112,7 @@ void search_progress_callback(int current, int total, void *user_data) {
     mach_vm_size_t data_size = 0;
     void *data = read_range_mem(g_task, a, 0, s, &addr, &data_size);
     if (data == NULL || size == 0) return @"No memory.";
-    
+
     NSMutableString *hex = [NSMutableString stringWithCapacity:data_size * 4];
     NSMutableString *chs = [NSMutableString stringWithCapacity:data_size];
     [hex appendFormat:@"%08llX ", addr];
@@ -140,7 +132,6 @@ void search_progress_callback(int current, int total, void *user_data) {
     return hex;
 }
 
-#pragma mark - Utils
 - (int)memTypeFromDLGMemValueType:(DLGMemValueType)type {
     switch (type) {
         case DLGMemValueTypeUnsignedByte: return SearchResultValueTypeUInt8;

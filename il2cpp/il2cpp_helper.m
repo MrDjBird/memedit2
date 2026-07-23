@@ -52,7 +52,6 @@ char* il2cpp_get_method_signature(const MethodInfo* method) {
 
     uint32_t param_count = il2cpp_method_get_param_count ? il2cpp_method_get_param_count(method) : 0;
 
-    // Build signature string
     char signature[512];
     snprintf(signature, sizeof(signature), "%s %s(", return_type_name, method_name);
 
@@ -82,29 +81,28 @@ char* il2cpp_get_method_signature(const MethodInfo* method) {
 
 Il2CppEnumResult* il2cpp_enumerate_classes(void) {
     if (!il2cpp_api_is_available()) {
-        IL2CPP_LOG(@"enumerate_classes: IL2CPP API not available");
+        IL2CPP_LOG(@"enumerate_classes: il2cpp api not ready");
         return NULL;
     }
 
     Il2CppDomain* domain = il2cpp_domain_get();
     if (!domain) {
-        IL2CPP_LOG(@"enumerate_classes: Failed to get domain!");
+        IL2CPP_LOG(@"enumerate_classes: domain not get");
         return NULL;
     }
-    IL2CPP_LOG(@"enumerate_classes: Got domain: %p", domain);
+    IL2CPP_LOG(@"enumerate_classes: got domain %p", domain);
 
     size_t assembly_count = 0;
     const Il2CppAssembly** assemblies = il2cpp_domain_get_assemblies(domain, &assembly_count);
     if (!assemblies) {
-        IL2CPP_LOG(@"enumerate_classes: Failed to get assemblies!");
+        IL2CPP_LOG(@"enumerate_classes: assemblies not get");
         return NULL;
     }
 
-    IL2CPP_LOG(@"enumerate_classes: Found %zu assemblies", assembly_count);
+    IL2CPP_LOG(@"enumerate_classes: found %zu assemblies", assembly_count);
 
-    // count total classes
     int total_class_count = 0;
-    IL2CPP_LOG(@"enumerate_classes: Counting classes in assemblies");
+    IL2CPP_LOG(@"enumerate_classes: count classes");
     for (size_t i = 0; i < assembly_count; i++) {
         const Il2CppImage* image = il2cpp_assembly_get_image(assemblies[i]);
         if (image && il2cpp_image_get_class_count) {
@@ -113,7 +111,7 @@ Il2CppEnumResult* il2cpp_enumerate_classes(void) {
         }
     }
 
-    IL2CPP_LOG(@"enumerate_classes: Total classes: %d", total_class_count);
+    IL2CPP_LOG(@"enumerate_classes: total classes %d", total_class_count);
 
     Il2CppEnumResult* result = (Il2CppEnumResult*)malloc(sizeof(Il2CppEnumResult));
     result->classes = (Il2CppClassInfo*)malloc(sizeof(Il2CppClassInfo) * total_class_count);
@@ -123,7 +121,6 @@ Il2CppEnumResult* il2cpp_enumerate_classes(void) {
         const Il2CppImage* image = il2cpp_assembly_get_image(assemblies[i]);
         if (!image) continue;
 
-        const char* image_name = il2cpp_image_get_name(image);
         size_t class_count = il2cpp_image_get_class_count ? il2cpp_image_get_class_count(image) : 0;
 
         for (size_t j = 0; j < class_count; j++) {
@@ -141,7 +138,6 @@ Il2CppEnumResult* il2cpp_enumerate_classes(void) {
             info->name = strdup(name);
             info->namespace = strdup(namespace);
 
-            // build full name
             if (strlen(namespace) > 0) {
                 char full_name[512];
                 snprintf(full_name, sizeof(full_name), "%s.%s", namespace, name);
@@ -173,7 +169,6 @@ void il2cpp_free_enum_result(Il2CppEnumResult* result) {
 Il2CppMethodEnumResult* il2cpp_enumerate_methods(Il2CppClass* klass) {
     if (!klass || !il2cpp_class_get_methods) return NULL;
 
-    // Count methods first
     int method_count = 0;
     void* iter = NULL;
     while (il2cpp_class_get_methods(klass, &iter)) {
@@ -190,6 +185,18 @@ Il2CppMethodEnumResult* il2cpp_enumerate_methods(Il2CppClass* klass) {
         Il2CppMethodInfo* info = &result->methods[result->method_count];
 
         info->method = method;
+        info->klass = klass;
+
+        const char* class_name = il2cpp_class_get_name ? il2cpp_class_get_name(klass) : NULL;
+        const char* class_namespace = il2cpp_class_get_namespace ? il2cpp_class_get_namespace(klass) : NULL;
+        if (!class_name) class_name = "<unknown>";
+        if (class_namespace && strlen(class_namespace) > 0) {
+            char full_name[512];
+            snprintf(full_name, sizeof(full_name), "%s.%s", class_namespace, class_name);
+            info->class_full_name = strdup(full_name);
+        } else {
+            info->class_full_name = strdup(class_name);
+        }
 
         const char* name = il2cpp_method_get_name(method);
         info->name = strdup(name ? name : "<unknown>");
@@ -215,6 +222,7 @@ void il2cpp_free_method_enum_result(Il2CppMethodEnumResult* result) {
     if (!result) return;
 
     for (int i = 0; i < result->method_count; i++) {
+        free(result->methods[i].class_full_name);
         free(result->methods[i].name);
         free(result->methods[i].return_type);
         free(result->methods[i].signature);
@@ -230,7 +238,6 @@ Il2CppEnumResult* il2cpp_search_classes(const char* search_term) {
     Il2CppEnumResult* all_classes = il2cpp_enumerate_classes();
     if (!all_classes) return NULL;
 
-    // Count matching classes
     int match_count = 0;
     for (int i = 0; i < all_classes->class_count; i++) {
         if (strcasestr(all_classes->classes[i].full_name, search_term) ||
@@ -243,7 +250,6 @@ Il2CppEnumResult* il2cpp_search_classes(const char* search_term) {
     result->classes = (Il2CppClassInfo*)malloc(sizeof(Il2CppClassInfo) * match_count);
     result->class_count = 0;
 
-    // Copy matching classes
     for (int i = 0; i < all_classes->class_count; i++) {
         if (strcasestr(all_classes->classes[i].full_name, search_term) ||
             strcasestr(all_classes->classes[i].name, search_term)) {
@@ -266,7 +272,6 @@ Il2CppMethodEnumResult* il2cpp_search_methods(Il2CppClass* klass, const char* se
     Il2CppMethodEnumResult* all_methods = il2cpp_enumerate_methods(klass);
     if (!all_methods) return NULL;
 
-    // Count matching methods
     int match_count = 0;
     for (int i = 0; i < all_methods->method_count; i++) {
         if (strcasestr(all_methods->methods[i].name, search_term) ||
@@ -279,12 +284,13 @@ Il2CppMethodEnumResult* il2cpp_search_methods(Il2CppClass* klass, const char* se
     result->methods = (Il2CppMethodInfo*)malloc(sizeof(Il2CppMethodInfo) * match_count);
     result->method_count = 0;
 
-    // Copy matching methods
     for (int i = 0; i < all_methods->method_count; i++) {
         if (strcasestr(all_methods->methods[i].name, search_term) ||
             strcasestr(all_methods->methods[i].signature, search_term)) {
             Il2CppMethodInfo* info = &result->methods[result->method_count];
             info->method = all_methods->methods[i].method;
+            info->klass = all_methods->methods[i].klass;
+            info->class_full_name = strdup(all_methods->methods[i].class_full_name);
             info->name = strdup(all_methods->methods[i].name);
             info->return_type = strdup(all_methods->methods[i].return_type);
             info->signature = strdup(all_methods->methods[i].signature);
@@ -295,6 +301,59 @@ Il2CppMethodEnumResult* il2cpp_search_methods(Il2CppClass* klass, const char* se
     }
 
     il2cpp_free_method_enum_result(all_methods);
+    return result;
+}
+
+Il2CppMethodEnumResult* il2cpp_search_all_methods(const char* search_term) {
+    if (!search_term || search_term[0] == '\0' ||
+        !il2cpp_class_get_methods || !il2cpp_method_get_name) return NULL;
+
+    Il2CppEnumResult* classes = il2cpp_enumerate_classes();
+    if (!classes) return NULL;
+
+    Il2CppMethodEnumResult* result = (Il2CppMethodEnumResult*)malloc(sizeof(Il2CppMethodEnumResult));
+    result->methods = NULL;
+    result->method_count = 0;
+    int capacity = 0;
+
+    for (int class_index = 0; class_index < classes->class_count; class_index++) {
+        Il2CppClass* klass = classes->classes[class_index].klass;
+        void* iter = NULL;
+        const MethodInfo* method = NULL;
+        while ((method = il2cpp_class_get_methods(klass, &iter))) {
+            const char* method_name = il2cpp_method_get_name(method);
+            if (!method_name || !strcasestr(method_name, search_term)) continue;
+
+            if (result->method_count == capacity) {
+                capacity = capacity == 0 ? 32 : capacity * 2;
+                Il2CppMethodInfo* resized = (Il2CppMethodInfo*)realloc(
+                    result->methods, sizeof(Il2CppMethodInfo) * capacity);
+                if (!resized) {
+                    il2cpp_free_enum_result(classes);
+                    il2cpp_free_method_enum_result(result);
+                    return NULL;
+                }
+                result->methods = resized;
+            }
+
+            Il2CppMethodInfo* info = &result->methods[result->method_count++];
+            info->method = method;
+            info->klass = klass;
+            info->class_full_name = strdup(classes->classes[class_index].full_name);
+            info->name = strdup(method_name);
+
+            const Il2CppType* return_type = il2cpp_method_get_return_type(method);
+            info->return_type = strdup(il2cpp_get_type_name(return_type));
+            info->signature = il2cpp_get_method_signature(method);
+            info->param_count = il2cpp_method_get_param_count
+                ? il2cpp_method_get_param_count(method) : 0;
+            bool is_instance = il2cpp_method_is_instance
+                ? il2cpp_method_is_instance(method) : true;
+            info->is_static = !is_instance;
+        }
+    }
+
+    il2cpp_free_enum_result(classes);
     return result;
 }
 
@@ -338,31 +397,29 @@ void il2cpp_free_param_info(Il2CppParamInfo* params, int param_count) {
 
 char* il2cpp_invoke_method(const MethodInfo* method, void* obj, void** params) {
     if (!method || !il2cpp_runtime_invoke) {
-        IL2CPP_LOG(@"invoke_method: Invalid method or runtime_invoke not available");
+        IL2CPP_LOG(@"invoke_method: method bad or runtime invoke missing");
         return NULL;
     }
 
-    IL2CPP_LOG(@"invoke_method: Invoking method %s", il2cpp_method_get_name(method));
+    IL2CPP_LOG(@"invoke_method: invoke %s", il2cpp_method_get_name(method));
 
-    // actual invocation
     Il2CppObject* exception = NULL;
     Il2CppObject* result = il2cpp_runtime_invoke(method, obj, params, &exception);
 
     if (exception) {
-        IL2CPP_LOG(@"invoke_method: Exception occurred!");
+        IL2CPP_LOG(@"invoke_method: got exception");
         return strdup("Exception occurred during invocation");
     }
 
     const Il2CppType* return_type = il2cpp_method_get_return_type(method);
     if (!return_type) {
-        IL2CPP_LOG(@"invoke_method: No return type");
+        IL2CPP_LOG(@"invoke_method: no return type");
         return strdup("(void)");
     }
 
     int return_type_enum = il2cpp_type_get_type(return_type);
-    IL2CPP_LOG(@"invoke_method: Return type enum: %d", return_type_enum);
+    IL2CPP_LOG(@"invoke_method: return type %d", return_type_enum);
 
-    // format result
     char result_str[256];
     if (return_type_enum == IL2CPP_TYPE_VOID) {
         snprintf(result_str, sizeof(result_str), "(void)");
@@ -446,14 +503,13 @@ char* il2cpp_invoke_method(const MethodInfo* method, void* obj, void** params) {
         }
     }
 
-    IL2CPP_LOG(@"invoke_method: Result: %s", result_str);
+    IL2CPP_LOG(@"invoke_method: result %s", result_str);
     return strdup(result_str);
 }
 
 Il2CppFieldEnumResult* il2cpp_enumerate_fields(Il2CppClass* klass) {
     if (!klass || !il2cpp_class_get_fields) return NULL;
 
-    // Count fields first
     int field_count = 0;
     void* iter = NULL;
     while (il2cpp_class_get_fields(klass, &iter)) {
@@ -464,7 +520,6 @@ Il2CppFieldEnumResult* il2cpp_enumerate_fields(Il2CppClass* klass) {
     result->fields = (Il2CppFieldInfo*)malloc(sizeof(Il2CppFieldInfo) * field_count);
     result->field_count = 0;
 
-    // Enumerate fields
     iter = NULL;
     FieldInfo* field;
     while ((field = il2cpp_class_get_fields(klass, &iter))) {
@@ -664,7 +719,6 @@ bool il2cpp_set_field_value_from_string(void* obj, FieldInfo* field, Il2CppClass
             return false;
     }
 
-    // Set the value
     if (is_static) {
         if (il2cpp_field_static_set_value && klass) {
             if (il2cpp_runtime_class_init) {
@@ -711,9 +765,8 @@ typedef struct {
 
 static void instance_callback(Il2CppObject** objects, int size, void* userdata) {
     InstanceCollector* collector = (InstanceCollector*)userdata;
-    IL2CPP_LOG(@"instance_callback: Received %d objects", size);
+    IL2CPP_LOG(@"instance_callback: got %d objects", size);
 
-    // Ensure capacity
     if (collector->count + size > collector->capacity) {
         int new_capacity = collector->capacity * 2;
         if (new_capacity < collector->count + size) {
@@ -723,7 +776,6 @@ static void instance_callback(Il2CppObject** objects, int size, void* userdata) 
         collector->capacity = new_capacity;
     }
 
-    // Copy objects
     for (int i = 0; i < size; i++) {
         collector->objects[collector->count++] = objects[i];
     }
@@ -752,9 +804,8 @@ static void* realloc_callback(void* handle, size_t size, void* userdata) {
 Il2CppInstanceEnumResult* il2cpp_find_instances(Il2CppClass* klass) {
     if (!klass) return NULL;
 
-    IL2CPP_LOG(@"find_instances: Starting instance search for class");
+    IL2CPP_LOG(@"find_instances: start class search");
 
-    // confirm functions
     bool has_old_api = (il2cpp_unity_liveness_calculation_begin &&
                         il2cpp_unity_liveness_calculation_from_statics &&
                         il2cpp_unity_liveness_calculation_end);
@@ -767,7 +818,7 @@ Il2CppInstanceEnumResult* il2cpp_find_instances(Il2CppClass* klass) {
                         il2cpp_start_gc_world);
 
     if (!has_old_api && !has_new_api) {
-        IL2CPP_LOG(@"find_instances: rerquired functions not found!");
+        IL2CPP_LOG(@"find_instances: needed functions missing");
         Il2CppInstanceEnumResult* result = (Il2CppInstanceEnumResult*)malloc(sizeof(Il2CppInstanceEnumResult));
         result->instances = NULL;
         result->instance_count = 0;
@@ -783,7 +834,7 @@ Il2CppInstanceEnumResult* il2cpp_find_instances(Il2CppClass* klass) {
 
     @try {
         if (has_new_api) {
-            IL2CPP_LOG(@"find_instances: Using new method");
+            IL2CPP_LOG(@"find_instances: use new method");
 
             il2cpp_stop_gc_world();
             state = il2cpp_unity_liveness_allocate_struct(klass, 0, instance_callback, &collector, realloc_callback);
@@ -796,7 +847,7 @@ Il2CppInstanceEnumResult* il2cpp_find_instances(Il2CppClass* klass) {
                 il2cpp_unity_liveness_free_struct(state);
             }
         } else {
-            IL2CPP_LOG(@"find_instances: Using old method");
+            IL2CPP_LOG(@"find_instances: use old method");
             state = il2cpp_unity_liveness_calculation_begin(klass, 0, instance_callback, &collector,
                                                              empty_world_callback, empty_world_callback);
             if (state) {
@@ -805,7 +856,7 @@ Il2CppInstanceEnumResult* il2cpp_find_instances(Il2CppClass* klass) {
             }
         }
     } @catch (NSException *exception) {
-        IL2CPP_LOG(@"find_instances: Exception!: %@", exception);
+        IL2CPP_LOG(@"find_instances: got exception %@", exception);
         free(collector.objects);
         Il2CppInstanceEnumResult* result = (Il2CppInstanceEnumResult*)malloc(sizeof(Il2CppInstanceEnumResult));
         result->instances = NULL;
@@ -813,9 +864,8 @@ Il2CppInstanceEnumResult* il2cpp_find_instances(Il2CppClass* klass) {
         return result;
     }
 
-    IL2CPP_LOG(@"find_instances: Found %d instances", collector.count);
+    IL2CPP_LOG(@"find_instances: found %d instances", collector.count);
 
-    // Build result
     Il2CppInstanceEnumResult* result = (Il2CppInstanceEnumResult*)malloc(sizeof(Il2CppInstanceEnumResult));
 
     if (collector.count > 0) {
@@ -838,4 +888,180 @@ void il2cpp_free_instance_enum_result(Il2CppInstanceEnumResult* result) {
     if (!result) return;
     if (result->instances) free(result->instances);
     free(result);
+}
+
+Il2CppClass* il2cpp_find_class_by_full_name(const char* full_name) {
+    if (!full_name || !il2cpp_api_is_available()) return NULL;
+
+    Il2CppDomain* domain = il2cpp_domain_get();
+    if (!domain) return NULL;
+
+    size_t assembly_count = 0;
+    const Il2CppAssembly** assemblies = il2cpp_domain_get_assemblies(domain, &assembly_count);
+    if (!assemblies) return NULL;
+
+    for (size_t i = 0; i < assembly_count; i++) {
+        const Il2CppImage* image = il2cpp_assembly_get_image(assemblies[i]);
+        if (!image) continue;
+
+        size_t class_count = il2cpp_image_get_class_count ? il2cpp_image_get_class_count(image) : 0;
+        for (size_t j = 0; j < class_count; j++) {
+            Il2CppClass* klass = (Il2CppClass*)il2cpp_image_get_class(image, j);
+            if (!klass) continue;
+
+            const char* name = il2cpp_class_get_name(klass);
+            const char* namespace = il2cpp_class_get_namespace(klass);
+            if (!name) continue;
+            if (!namespace) namespace = "";
+
+            char candidate[512];
+            if (strlen(namespace) > 0) {
+                snprintf(candidate, sizeof(candidate), "%s.%s", namespace, name);
+            } else {
+                snprintf(candidate, sizeof(candidate), "%s", name);
+            }
+
+            if (strcmp(candidate, full_name) == 0) {
+                return klass;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+const MethodInfo* il2cpp_find_method_by_name(Il2CppClass* klass, const char* name, int param_count) {
+    if (!klass || !name || !il2cpp_class_get_methods) return NULL;
+
+    void* iter = NULL;
+    const MethodInfo* method;
+    while ((method = il2cpp_class_get_methods(klass, &iter))) {
+        const char* method_name = il2cpp_method_get_name(method);
+        if (!method_name || strcmp(method_name, name) != 0) continue;
+
+        if (param_count >= 0) {
+            int pc = il2cpp_method_get_param_count ? il2cpp_method_get_param_count(method) : 0;
+            if (pc != param_count) continue;
+        }
+
+        return method;
+    }
+
+    return NULL;
+}
+
+Il2CppEnumResult* il2cpp_classes_from_names(const char** full_names, int count) {
+    Il2CppEnumResult* result = (Il2CppEnumResult*)malloc(sizeof(Il2CppEnumResult));
+    result->classes = (Il2CppClassInfo*)malloc(sizeof(Il2CppClassInfo) * (count > 0 ? count : 1));
+    result->class_count = 0;
+
+    for (int i = 0; i < count; i++) {
+        if (!full_names[i]) continue;
+        Il2CppClass* klass = il2cpp_find_class_by_full_name(full_names[i]);
+        if (!klass) continue;
+
+        const char* name = il2cpp_class_get_name(klass);
+        const char* namespace = il2cpp_class_get_namespace(klass);
+        if (!name) name = "<unknown>";
+        if (!namespace) namespace = "";
+
+        Il2CppClassInfo* info = &result->classes[result->class_count];
+        info->klass = klass;
+        info->name = strdup(name);
+        info->namespace = strdup(namespace);
+
+        if (strlen(namespace) > 0) {
+            char full_name[512];
+            snprintf(full_name, sizeof(full_name), "%s.%s", namespace, name);
+            info->full_name = strdup(full_name);
+        } else {
+            info->full_name = strdup(name);
+        }
+
+        result->class_count++;
+    }
+
+    return result;
+}
+
+char* il2cpp_invoke_method_with_args(const MethodInfo* method, void* obj, const char** string_args, int arg_count) {
+    if (!method) return NULL;
+
+    int param_count = il2cpp_method_get_param_count ? il2cpp_method_get_param_count(method) : 0;
+    if (param_count > 64) param_count = 64;
+
+    void* param_values[64];
+    void** params = param_count > 0 ? param_values : NULL;
+
+    void* buffers[64];
+    int buffer_count = 0;
+
+    for (int i = 0; i < param_count; i++) {
+        const Il2CppType* type = il2cpp_method_get_param ? il2cpp_method_get_param(method, i) : NULL;
+        int type_enum = il2cpp_type_get_type ? il2cpp_type_get_type(type) : 0;
+        const char* s = (i < arg_count && string_args[i]) ? string_args[i] : "";
+
+        switch (type_enum) {
+            case IL2CPP_TYPE_BOOLEAN: {
+                bool* v = (bool*)malloc(sizeof(bool));
+                *v = (strcasecmp(s, "true") == 0) || (atoi(s) != 0);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_I1: {
+                int8_t* v = (int8_t*)malloc(sizeof(int8_t)); *v = (int8_t)atoi(s);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_U1: {
+                uint8_t* v = (uint8_t*)malloc(sizeof(uint8_t)); *v = (uint8_t)atoi(s);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_I2: {
+                int16_t* v = (int16_t*)malloc(sizeof(int16_t)); *v = (int16_t)atoi(s);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_U2: {
+                uint16_t* v = (uint16_t*)malloc(sizeof(uint16_t)); *v = (uint16_t)atoi(s);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_I4: {
+                int32_t* v = (int32_t*)malloc(sizeof(int32_t)); *v = (int32_t)atoi(s);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_U4: {
+                uint32_t* v = (uint32_t*)malloc(sizeof(uint32_t)); *v = (uint32_t)strtoul(s, NULL, 10);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_I8: {
+                int64_t* v = (int64_t*)malloc(sizeof(int64_t)); *v = (int64_t)atoll(s);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_U8: {
+                uint64_t* v = (uint64_t*)malloc(sizeof(uint64_t)); *v = (uint64_t)strtoull(s, NULL, 10);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_R4: {
+                float* v = (float*)malloc(sizeof(float)); *v = (float)atof(s);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_R8: {
+                double* v = (double*)malloc(sizeof(double)); *v = atof(s);
+                params[i] = v; buffers[buffer_count++] = v; break;
+            }
+            case IL2CPP_TYPE_STRING: {
+                params[i] = il2cpp_string_new ? il2cpp_string_new(s) : NULL;
+                break;
+            }
+            default:
+                params[i] = NULL;
+                break;
+        }
+    }
+
+    char* result = il2cpp_invoke_method(method, obj, params);
+
+    for (int i = 0; i < buffer_count; i++) {
+        free(buffers[i]);
+    }
+
+    return result;
 }

@@ -14,7 +14,6 @@ def udp_server(host="0.0.0.0", port=rlog_port):
         (data, addr) = s.recvfrom(128*1024)
         yield data
 
-# clear log
 os.remove("log.txt") if os.path.exists("log.txt") else None
 
 for data in udp_server():

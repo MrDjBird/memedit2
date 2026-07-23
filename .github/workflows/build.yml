@@ -9,24 +9,50 @@ on:
 jobs:
   build:
     runs-on: macos-15
-    
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Switch Xcode version
         run: |
           sudo xcode-select -s /Applications/Xcode_16.2.0.app/Contents/Developer
 
-      - name: Build and Package
-        run: |
-          cd $GITHUB_WORKSPACE
-          RELEASE_BUILD=1 make
-          mkdir -p ./output
-          mv ./*.dylib ./output/memedit-$(date +%Y-%m-%d-%Hh%Mm%Ss)-$(git rev-parse --short HEAD).dylib
+      - name: Install theos
+        uses: Randomblock1/theos-action@v1
 
-      - name: Upload Artifact
+      - name: Install AltList
+        run: |
+          git clone --depth 1 https://github.com/opa334/AltList.git
+          cd AltList
+          make clean
+          make FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          mkdir -p "$THEOS/lib/iphone/rootless/lib"
+          cp -Rv "./.theos/obj/AltList.framework" "$THEOS/lib/iphone/rootless"
+
+      - name: Build and package tweak
+        run: |
+          set -euxo pipefail
+          cd "$GITHUB_WORKSPACE"
+          make clean
+          MEMEDIT_RELEASE_BUILD=1 make package
+
+      - name: Upload deb artifact
         uses: actions/upload-artifact@v4
         with:
-          name: memedit
-          path: ./output/*.dylib
+          name: memedit-deb
+          path: ./packages/*.deb
+
+      - name: Build jailed dylib
+        run: |
+          set -euxo pipefail
+          cd "$GITHUB_WORKSPACE"
+          make clean
+          MEMEDIT_RELEASE_BUILD=1 JAILED=1 make
+
+      - name: Upload jailed dylib artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: memedit-jailed-dylib
+          path: ./.theos/obj/memedit.dylib
+          if-no-files-found: error

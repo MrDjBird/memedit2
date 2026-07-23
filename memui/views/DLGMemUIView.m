@@ -1,19 +1,15 @@
-//
-//  DLGMemUIView.m
-//  memui
-//
-//  Created by Liu Junqi on 11/11/2016.
-//  Copyright © 2016 Liu Junqi. All rights reserved.
-//
 
 #import "DLGMemUIView.h"
 #import "DLGMemUIViewCell.h"
 #import "DLGMemUIMenu.h"
 #import "DLGUnityHaxView.h"
-#import "DLGUnityHaxAlert.h"
+#if !JAILED
+#import "DLGUnityHooksView.h"
+#endif
+#import "MEAlert.h"
+#import "MESpeedHackPanel.h"
 #import "../RemoteLog.h"
 
-// #define MaxResultCount  500
 #define MaxResultCount  2000
 
 @interface DLGMemUIView () <UITextFieldDelegate, UITableViewDelegate, UITableViewDataSource, DLGMemUIViewCellDelegate, DLGMemUIMenuDelegate> {
@@ -71,7 +67,26 @@
 @property (nonatomic) BOOL editAllMode;
 @property (nonatomic) NSMutableSet<NSString *> *selectedAddresses;
 
+- (UIView *)presentationView;
+
 @end
+
+static UIWindow *activeApplicationWindow(void)
+{
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) {
+            continue;
+        }
+
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
+        for (UIWindow *window in windowScene.windows) {
+            if (window.isKeyWindow) {
+                return window;
+            }
+        }
+    }
+    return nil;
+}
 
 @implementation DLGMemUIView
 
@@ -98,13 +113,13 @@
     CGRect screenBounds = [UIScreen mainScreen].bounds;
     self.rcExpandedFrame = screenBounds;
     self.rcCollapsedFrame = CGRectMake(0, 0, DLG_DEBUG_CONSOLE_VIEW_SIZE, DLG_DEBUG_CONSOLE_VIEW_SIZE);
-    
+
     _shouldNotBeDragged = NO;
     _expanded = NO;
     self.isUnsignedValueType = NO;
     self.selectedValueTypeIndex = 2;
     self.selectedComparisonIndex = 2;
-    
+
     self.tintColor = [UIColor colorWithRed:0.0 green:0.478 blue:1.0 alpha:1.0];
     self.backgroundColor = [UIColor blackColor];
 }
@@ -117,12 +132,12 @@
     self.layer.shadowOffset = CGSizeMake(0, 6);
     self.layer.shadowRadius = 16;
     self.layer.shadowOpacity = 0.5;
-    
+
     [self initConsoleButton];
     [self initContents];
     [self initMemoryContents];
     self.vShowingContent = self.vContent;
-    
+
     UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
     UIVisualEffectView *blurEffectView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
     blurEffectView.frame = self.bounds;
@@ -134,8 +149,7 @@
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
     button.translatesAutoresizingMaskIntoConstraints = NO;
     button.layer.masksToBounds = YES;
-    
-    // icon
+
     NSURL *imageURL = [NSURL URLWithString:@"https://github.com/mineek.png"];
     NSData *imageData = [NSData dataWithContentsOfURL:imageURL];
     if (!imageData) {
@@ -148,16 +162,16 @@
     }
 
     self.layer.cornerRadius = CGRectGetWidth(self.bounds) / 2;
-        
+
     [self addSubview:button];
-    
+
     [NSLayoutConstraint activateConstraints:@[
         [button.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
         [button.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
         [button.topAnchor constraintEqualToAnchor:self.topAnchor],
         [button.bottomAnchor constraintEqualToAnchor:self.bottomAnchor]
     ]];
-    
+
     [button addTarget:self action:@selector(onConsoleButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
     self.btnConsole = button;
 }
@@ -172,7 +186,6 @@
     [self.tfValue resignFirstResponder];
 }
 
-#pragma mark - Init Content View
 - (void)initContents {
     [self initContentView];
     [self initCloseButton];
@@ -188,13 +201,13 @@
     v.translatesAutoresizingMaskIntoConstraints = NO;
     v.backgroundColor = [UIColor clearColor];
     [self addSubview:v];
-    
+
     NSDictionary *views = @{@"v":v};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|[v]|" options:0 metrics:nil views:views];
     [self addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[v]|" options:0 metrics:nil views:views];
     [self addConstraints:cv];
-    
+
     self.vContent = v;
 }
 
@@ -229,7 +242,6 @@
 
     [button addTarget:self action:@selector(onCloseButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
 
-    // long press gesture to make UI transparent
     UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(closeButtonLongPress:)];
     longPress.minimumPressDuration = 0.3;
     [button addGestureRecognizer:longPress];
@@ -256,7 +268,6 @@
     }
 }
 
-#pragma mark - Init Search View
 - (void)initSearchView {
     [self initSearchViewContainer];
     [self initSearchValueType];
@@ -275,7 +286,6 @@
     v.layer.shadowOpacity = 0.3;
     [self.vContent addSubview:v];
 
-    NSDictionary *views = @{@"v":v};
     [NSLayoutConstraint activateConstraints:@[
         [v.leadingAnchor constraintEqualToAnchor:self.vContent.leadingAnchor constant:16],
         [v.trailingAnchor constraintEqualToAnchor:self.vContent.trailingAnchor constant:-16],
@@ -294,13 +304,13 @@
     lbl.textColor = [UIColor whiteColor];
     lbl.text = @"SInt";
     [self.vSearch addSubview:lbl];
-    
+
     NSDictionary *views = @{@"lbl":lbl};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|[lbl(64)]" options:0 metrics:nil views:views];
     [self.vSearch addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[lbl]|" options:0 metrics:nil views:views];
     [self.vSearch addConstraints:cv];
-    
+
     self.lblType = lbl;
 }
 
@@ -338,21 +348,20 @@
     tf.font = [UIFont systemFontOfSize:16];
     tf.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Enter value..."
         attributes:@{NSForegroundColorAttributeName: [UIColor colorWithWhite:1.0 alpha:0.5]}];
-    
+
     [self.vSearch addSubview:tf];
-    
+
     [NSLayoutConstraint activateConstraints:@[
         [tf.leadingAnchor constraintEqualToAnchor:self.lblType.trailingAnchor constant:8],
         [tf.trailingAnchor constraintEqualToAnchor:self.btnSearch.leadingAnchor constant:-8],
         [tf.centerYAnchor constraintEqualToAnchor:self.vSearch.centerYAnchor],
         [tf.heightAnchor constraintEqualToConstant:36]
     ]];
-    
+
     tf.delegate = self;
     self.tfValue = tf;
 }
 
-#pragma mark - Init Option View
 - (void)initOptionView {
     [self initOptionViewContainer];
     [self initComparisonSegmentedControl];
@@ -365,13 +374,13 @@
     v.translatesAutoresizingMaskIntoConstraints = NO;
     v.backgroundColor = [UIColor clearColor];
     [self.vContent addSubview:v];
-    
+
     NSDictionary *views = @{@"vv":self.vSearch, @"v":v};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|-8-[v]-8-|" options:0 metrics:nil views:views];
     [self addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:[vv]-8-[v]" options:0 metrics:nil views:views];
     [self.vContent addConstraints:cv];
-    
+
     self.vOption = v;
 }
 
@@ -383,13 +392,13 @@
     sc.selectedSegmentIndex = 2;
     [sc addTarget:self action:@selector(onComparisonChanged:) forControlEvents:UIControlEventValueChanged];
     [self.vOption addSubview:sc];
-    
+
     NSDictionary *views = @{@"sc":sc};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|[sc]|" options:0 metrics:nil views:views];
     [self.vOption addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[sc]" options:0 metrics:nil views:views];
     [self.vOption addConstraints:cv];
-    
+
     self.scComparison = sc;
 }
 
@@ -402,7 +411,7 @@
     sc.selected = NO;
     [sc addTarget:self action:@selector(onValueTypeChanged:) forControlEvents:UIControlEventValueChanged];
     [self.vOption addSubview:sc];
-    
+
     NSDictionary *views = @{@"cmp":self.scComparison, @"sc":sc};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|[sc]|" options:0 metrics:nil views:views];
     [self.vOption addConstraints:ch];
@@ -421,17 +430,16 @@
     sc.selected = YES;
     [sc addTarget:self action:@selector(onValueTypeChanged:) forControlEvents:UIControlEventValueChanged];
     [self.vOption addSubview:sc];
-    
+
     NSDictionary *views = @{@"usc":self.scUValueType, @"sc":sc};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|[sc]|" options:0 metrics:nil views:views];
     [self.vOption addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:[usc][sc]|" options:0 metrics:nil views:views];
     [self.vOption addConstraints:cv];
-    
+
     self.scSValueType = sc;
 }
 
-#pragma mark - Init Result View
 - (void)initResultView {
     UIView *container = [[UIView alloc] init];
     container.translatesAutoresizingMaskIntoConstraints = NO;
@@ -468,7 +476,7 @@
     [tv registerClass:[DLGMemUIViewCell class] forCellReuseIdentifier:DLGMemUIViewCellID];
     tv.contentInset = UIEdgeInsetsMake(12, 0, 12, 0);
     [container addSubview:tv];
-    
+
     UIView *progressContainer = [[UIView alloc] init];
     progressContainer.translatesAutoresizingMaskIntoConstraints = NO;
     progressContainer.backgroundColor = [UIColor colorWithWhite:0.15 alpha:0.95];
@@ -524,7 +532,6 @@
     self.progressContainer = progressContainer;
 }
 
-#pragma mark - Init More View
 - (void)initMoreView {
     [self initMoreViewContainer];
     [self initResetButton];
@@ -550,13 +557,13 @@
     v.translatesAutoresizingMaskIntoConstraints = NO;
     v.backgroundColor = [UIColor clearColor];
     [self.vContent addSubview:v];
-    
+
     NSDictionary *views = @{@"vv":self.vResult, @"v":v};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|-8-[v]-8-|" options:0 metrics:nil views:views];
     [self.vContent addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:[vv]-8-[v(32)]|" options:0 metrics:nil views:views];
     [self.vContent addConstraints:cv];
-    
+
     self.vMore = v;
 }
 
@@ -567,13 +574,13 @@
     [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [btn addTarget:self action:@selector(onResetTapped:) forControlEvents:UIControlEventTouchUpInside];
     [self.vMore addSubview:btn];
-    
+
     NSDictionary *views = @{@"btn":btn};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|[btn(64)]" options:0 metrics:nil views:views];
     [self.vMore addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[btn]|" options:0 metrics:nil views:views];
     [self.vMore addConstraints:cv];
-    
+
     self.btnReset = btn;
 }
 
@@ -584,13 +591,13 @@
     [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [btn addTarget:self action:@selector(onRefreshTapped:) forControlEvents:UIControlEventTouchUpInside];
     [self.vMore addSubview:btn];
-    
+
     NSDictionary *views = @{@"btn":btn};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:[btn(64)]|" options:0 metrics:nil views:views];
     [self.vMore addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[btn]|" options:0 metrics:nil views:views];
     [self.vMore addConstraints:cv];
-    
+
     self.btnRefresh = btn;
 }
 
@@ -613,13 +620,11 @@
     [btn setTitle:@"Edit All" forState:UIControlStateNormal];
     [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [btn addTarget:self action:@selector(onEditAllTapped:) forControlEvents:UIControlEventTouchUpInside];
-    // if edit all is hold, select all
     [btn addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(onEditAllLongPressed:)]];
     [self.vMore addSubview:btn];
     self.btnEditAll = btn;
 }
 
-#pragma mark - Init Memory Content View
 - (void)initMemoryContents {
     [self initMemoryContentView];
     [self initMemoryView];
@@ -631,17 +636,16 @@
     v.translatesAutoresizingMaskIntoConstraints = NO;
     v.backgroundColor = [UIColor clearColor];
     [self addSubview:v];
-    
+
     NSDictionary *views = @{@"v":v};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|[v]|" options:0 metrics:nil views:views];
     [self addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[v]|" options:0 metrics:nil views:views];
     [self addConstraints:cv];
-    
+
     self.vMemoryContent = v;
 }
 
-#pragma mark - Init Memory View
 - (void)initMemoryView {
     [self initMemoryViewContainer];
     [self initMemorySearchButton];
@@ -656,13 +660,13 @@
     v.translatesAutoresizingMaskIntoConstraints = NO;
     v.backgroundColor = [UIColor clearColor];
     [self.vMemoryContent addSubview:v];
-    
+
     NSDictionary *views = @{@"v":v};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|-8-[v]-8-|" options:0 metrics:nil views:views];
     [self.vMemoryContent addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|-20-[v(32)]" options:0 metrics:nil views:views];
     [self.vMemoryContent addConstraints:cv];
-    
+
     self.vMemory = v;
 }
 
@@ -673,13 +677,13 @@
     [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [btn addTarget:self action:@selector(onSearchMemoryTapped:) forControlEvents:UIControlEventTouchUpInside];
     [self.vMemory addSubview:btn];
-    
+
     NSDictionary *views = @{@"btn":btn};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:[btn(64)]|" options:0 metrics:nil views:views];
     [self.vMemory addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[btn]|" options:0 metrics:nil views:views];
     [self.vMemory addConstraints:cv];
-    
+
     self.btnSearchMemory = btn;
 }
 
@@ -700,13 +704,13 @@
     tf.autocorrectionType = UITextAutocorrectionTypeNo;
     tf.enabled = YES;
     [self.vMemory addSubview:tf];
-    
+
     NSDictionary *views = @{@"tf":tf};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|[tf(64)]" options:0 metrics:nil views:views];
     [self.vMemory addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[tf]|" options:0 metrics:nil views:views];
     [self.vMemory addConstraints:cv];
-    
+
     self.tfMemorySize = tf;
 }
 
@@ -727,13 +731,13 @@
     tf.autocorrectionType = UITextAutocorrectionTypeNo;
     tf.enabled = YES;
     [self.vMemory addSubview:tf];
-    
+
     NSDictionary *views = @{@"sz":self.tfMemorySize, @"tf":tf, @"btn":self.btnSearchMemory};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:[sz]-8-[tf][btn]" options:0 metrics:nil views:views];
     [self.vMemory addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[tf]|" options:0 metrics:nil views:views];
     [self.vMemory addConstraints:cv];
-    
+
     self.tfMemory = tf;
 }
 
@@ -747,13 +751,13 @@
     tv.editable = NO;
     tv.selectable = YES;
     [self.vMemoryContent addSubview:tv];
-    
+
     NSDictionary *views = @{@"v":self.vMemory, @"tv":tv};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|[tv]|" options:0 metrics:nil views:views];
     [self.vMemoryContent addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:[v]-8-[tv]" options:0 metrics:nil views:views];
     [self.vMemoryContent addConstraints:cv];
-    
+
     self.tvMemory = tv;
 }
 
@@ -764,17 +768,16 @@
     [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [btn addTarget:self action:@selector(onBackFromMemoryTapped:) forControlEvents:UIControlEventTouchUpInside];
     [self.vMemoryContent addSubview:btn];
-    
+
     NSDictionary *views = @{@"tv":self.tvMemory, @"btn":btn};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|[btn]|" options:0 metrics:nil views:views];
     [self.vMemoryContent addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:[tv][btn(32)]|" options:0 metrics:nil views:views];
     [self.vMemoryContent addConstraints:cv];
-    
+
     self.btnBackFromMemory = btn;
 }
 
-#pragma mark - Setter / Getter
 - (void)setChainCount:(NSInteger)chainCount {
     _chainCount = chainCount;
     self.lblResult.text = [NSString stringWithFormat:@"Found %lld.", (long long)chainCount];
@@ -795,7 +798,7 @@
         free(chainArray);
         chainArray = NULL;
     }
-    
+
     if (self.chainCount > 0 && self.chainCount <= MaxResultCount) {
         chainArray = malloc(sizeof(search_result_t) * self.chainCount);
         search_result_chain_t c = chain;
@@ -810,26 +813,24 @@
     [self.tvResult reloadData];
 }
 
-#pragma mark - Gesture
 - (void)addGesture {
     if (self.tapGesture != nil) return;
-    
+
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleGesture:)];
     tap.numberOfTapsRequired = 1;
     tap.numberOfTouchesRequired = 1;
     [self addGestureRecognizer:tap];
-    
+
     self.tapGesture = tap;
 }
 
 - (void)removeGesture {
     if (self.tapGesture == nil) { return; }
-    
+
     [self removeGestureRecognizer:self.tapGesture];
     self.tapGesture = nil;
 }
 
-#pragma mark - Events
 - (void)onSearchTapped:(id)sender {
     [self.tfValue resignFirstResponder];
     if ([self.delegate respondsToSelector:@selector(DLGMemUISearchValue:type:comparison:)]) {
@@ -924,33 +925,17 @@
     DLGMemUIMenu *menu = [[DLGMemUIMenu alloc] init];
     menu.delegate = self;
 
-    UIView *targetView = nil;
-    if (self.window) {
-        targetView = self.window;
-    } else if (self.superview) {
-        UIView *view = self.superview;
-        while (view.superview) {
-            view = view.superview;
-        }
-        targetView = view;
-    } else {
-        if (@available(iOS 13.0, *)) {
-            targetView = [UIApplication sharedApplication].windows.firstObject;
-        } else {
-            targetView = [UIApplication sharedApplication].keyWindow;
-        }
-    }
+    UIView *targetView = [self presentationView];
 
     if (targetView) {
         [menu showInView:targetView animated:YES];
     } else {
-        RLog(@"[MemUIView] could not find a view to display the main menu!");
+        RLog(@"[mem ui view] no view for main menu");
     }
 
-    RLog(@"[MemUIView] showMainMenu completed");
+    RLog(@"[mem ui view] main menu show done");
 }
 
-#pragma mark - DLGMemUIMenuDelegate
 
 - (void)DLGMemUIMenuDidSelectMemoryEditor:(DLGMemUIMenu *)menu {
     [self doExpand];
@@ -958,34 +943,54 @@
 
 - (void)DLGMemUIMenuDidSelectUnityHax:(DLGMemUIMenu *)menu {
     DLGUnityHaxView *unityHaxView = [[DLGUnityHaxView alloc] init];
-    UIView *targetView = nil;
-    if (self.window) {
-        targetView = self.window;
-    } else if (self.superview) {
-        UIView *view = self.superview;
-        while (view.superview) {
-            view = view.superview;
-        }
-        targetView = view;
-    } else {
-        if (@available(iOS 13.0, *)) {
-            targetView = [UIApplication sharedApplication].windows.firstObject;
-        } else {
-            targetView = [UIApplication sharedApplication].keyWindow;
-        }
-    }
+    UIView *targetView = [self presentationView];
 
     if (targetView) {
         [unityHaxView showInView:targetView animated:YES];
     } else {
-        NSLog(@"[memedit] Could not find a view to display the Unity Hax view!");
+        NSLog(@"[memedit] no view for unity hax");
     }
 }
+
+- (void)DLGMemUIMenuDidSelectSpeedHack:(DLGMemUIMenu *)menu {
+    MESpeedHackPanel *panel = [[MESpeedHackPanel alloc] init];
+    UIView *targetView = [self presentationView];
+
+    if (targetView) {
+        [panel showInView:targetView animated:YES];
+    } else {
+        NSLog(@"[memedit] no view for speed hack panel");
+    }
+}
+
+#if !JAILED
+- (void)DLGMemUIMenuDidSelectUnityHooks:(DLGMemUIMenu *)menu {
+    DLGUnityHooksView *hooksView = [[DLGUnityHooksView alloc] init];
+    UIView *targetView = [self presentationView];
+
+    if (targetView) {
+        [hooksView showInView:targetView animated:YES];
+    } else {
+        RLog(@"[mem ui view] unity hooks no display");
+    }
+}
+#endif
 
 - (void)DLGMemUIMenuDidCancel:(DLGMemUIMenu *)menu {
 }
 
-#pragma mark - Expand & Collapse
+- (UIView *)presentationView {
+    if (self.window) {
+        return self.window;
+    }
+
+    UIView *view = self.superview;
+    while (view.superview) {
+        view = view.superview;
+    }
+    return view ?: activeApplicationWindow();
+}
+
 - (void)expand {
     [UIView animateWithDuration:0.3
                           delay:0
@@ -1025,7 +1030,6 @@
     }];
 }
 
-#pragma mark - Gesture
 - (void)handleGesture:(UITapGestureRecognizer *)sender {
     if (sender.state == UIGestureRecognizerStateEnded) {
         CGPoint pt = [sender locationInView:self.window];
@@ -1042,7 +1046,6 @@
     }
 }
 
-#pragma mark - UITextFieldDelegate
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
     if (textField == self.tfValue) {
         if (textField.returnKeyType == UIReturnKeySearch) {
@@ -1066,14 +1069,13 @@
     self.tfFocused = textField;
 }
 
-#pragma mark - UITableViewDataSource
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (self.chainCount > MaxResultCount) return 0;
     return self.chainCount;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    return 68; // match the rowHeight set in initResultView
+    return 68;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -1101,17 +1103,15 @@
     return cell;
 }
 
-#pragma mark - UITableViewDelegate
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    
+
     NSInteger index = indexPath.row;
     search_result_t result = chainArray[index];
     NSString *address = [NSString stringWithFormat:@"%llX", result->address];
     [self showMemory:address];
 }
 
-#pragma mark - DLGMemUIViewCellDelegate
 - (void)DLGMemUIViewCellModify:(NSString *)address value:(NSString *)value {
     DLGMemValueType type = [self currentValueType];
     if ([self.delegate respondsToSelector:@selector(DLGMemUIModifyValue:address:type:)]) {
@@ -1123,7 +1123,6 @@
     [self showMemory:address];
 }
 
-#pragma mark - Utils
 - (NSString *)valueStringFromResult:(search_result_t)result {
     NSString *value = nil;
     int type = result->type;
@@ -1218,7 +1217,6 @@
 
 - (void)onEditAllLongPressed:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateBegan) {
-        // select all addresses
         if (!self.editAllMode) {
             self.editAllMode = YES;
         }
@@ -1247,16 +1245,14 @@
 
         __weak typeof(self) weakSelf = self;
 
-        DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-        alert.titleText = @"Edit All";
-        alert.messageText = @"Enter new value for selected addresses:";
-        alert.alertStyle = DLGUnityHaxAlertStyleInput;
-        alert.inputPlaceholders = @[@"New value"];
-        alert.buttonTitles = @[@"OK", @"Cancel"];
-        alert.buttonHandler = ^(NSInteger buttonIndex) {
+        UIAlertController *alert = MECreateAlert(@"Edit All",
+                                                 @"Enter new value for selected addresses:",
+                                                 @[@"New value"],
+                                                 nil,
+                                                 @[@"OK", @"Cancel"],
+                                                 ^(UIAlertController *controller, NSInteger buttonIndex) {
             if (buttonIndex == 0) {
-                // ok
-                UITextField *textField = alert.textFields.firstObject;
+                UITextField *textField = controller.textFields.firstObject;
                 NSString *value = textField.text;
                 if (value.length > 0) {
                     for (NSString *address in weakSelf.selectedAddresses) {
@@ -1268,24 +1264,16 @@
                 }
             }
             [weakSelf exitEditAllMode];
-        };
+        });
 
-        UIView *targetView = self.window;
-        if (!targetView) {
-            if (@available(iOS 13.0, *)) {
-                targetView = [UIApplication sharedApplication].windows.firstObject;
-            } else {
-                targetView = [UIApplication sharedApplication].keyWindow;
-            }
-        }
+        UIView *targetView = [self presentationView];
 
         if (targetView) {
-            [alert showInView:targetView animated:YES];
+            MEPresentAlert(alert, targetView, YES);
         }
     }
 }
 
-#pragma mark - Progress Bar
 
 - (void)updateSearchProgress:(float)progress {
     dispatch_async(dispatch_get_main_queue(), ^{

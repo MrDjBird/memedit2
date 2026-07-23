@@ -12,6 +12,8 @@ typedef struct {
 
 typedef struct {
     const MethodInfo* method;
+    Il2CppClass* klass;
+    char* class_full_name;
     char* name;
     char* return_type;
     char* signature;
@@ -31,16 +33,15 @@ typedef struct {
 
 bool il2cpp_helper_init(void);
 
-// in all assemblies
 Il2CppEnumResult* il2cpp_enumerate_classes(void);
 void il2cpp_free_enum_result(Il2CppEnumResult* result);
 
-// in a specific class
 Il2CppMethodEnumResult* il2cpp_enumerate_methods(Il2CppClass* klass);
 void il2cpp_free_method_enum_result(Il2CppMethodEnumResult* result);
 
 Il2CppEnumResult* il2cpp_search_classes(const char* search_term);
 Il2CppMethodEnumResult* il2cpp_search_methods(Il2CppClass* klass, const char* search_term);
+Il2CppMethodEnumResult* il2cpp_search_all_methods(const char* search_term);
 
 const char* il2cpp_get_type_name(const Il2CppType* type);
 char* il2cpp_get_method_signature(const MethodInfo* method);
@@ -91,4 +92,11 @@ bool il2cpp_can_edit_field_type(int type_enum);
 Il2CppInstanceEnumResult* il2cpp_find_instances(Il2CppClass* klass);
 void il2cpp_free_instance_enum_result(Il2CppInstanceEnumResult* result);
 
-#endif /* il2cpp_helper_h */
+Il2CppClass* il2cpp_find_class_by_full_name(const char* full_name);
+const MethodInfo* il2cpp_find_method_by_name(Il2CppClass* klass, const char* name, int param_count);
+
+Il2CppEnumResult* il2cpp_classes_from_names(const char** full_names, int count);
+
+char* il2cpp_invoke_method_with_args(const MethodInfo* method, void* obj, const char** string_args, int arg_count);
+
+#endif

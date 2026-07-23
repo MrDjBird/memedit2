@@ -1,10 +1,3 @@
-//
-//  DLGMemUIViewCell.h
-//  memui
-//
-//  Created by Liu Junqi on 4/24/18.
-//  Copyright © 2018 DeviLeo. All rights reserved.
-//
 
 #import <UIKit/UIKit.h>
 

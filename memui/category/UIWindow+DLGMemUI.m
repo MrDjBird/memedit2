@@ -1,10 +1,3 @@
-//
-//  UIWindow+DLGMemUI.m
-//  memui
-//
-//  Created by Liu Junqi on 11/11/2016.
-//  Copyright © 2016 Liu Junqi. All rights reserved.
-//
 
 #import "UIWindow+DLGMemUI.h"
 #import <objc/runtime.h>
@@ -43,7 +36,7 @@
 - (void)handleGesture:(UIPanGestureRecognizer *)sender {
     UIView *view = self;
     CGRect frame = [self DLGMemUIView].frame;
-    
+
     CGPoint location = [sender locationInView:view];
     if (CGRectContainsPoint(frame, location) || self.dragging) {
         if (sender.state == UIGestureRecognizerStateBegan) {
@@ -62,37 +55,37 @@
             CGPoint pt = [sender translationInView:view];
             frame.origin.x = self.startPosition.x + pt.x;
             frame.origin.y = self.startPosition.y + pt.y;
-            
+
             if ([self DLGMemUIView].shouldNotBeDragged) {
                 CGRect screenBounds = [UIScreen mainScreen].bounds;
                 CGFloat screenWidth = CGRectGetWidth(screenBounds);
                 CGFloat screenHeight = CGRectGetHeight(screenBounds);
-                
+
                 if (CGRectGetMinX(frame) < 0) frame.origin.x = 0;
                 else if (CGRectGetMaxX(frame) > screenWidth) frame.origin.x = screenWidth - CGRectGetWidth(frame);
                 if (CGRectGetMinY(frame) < 0) frame.origin.y = 0;
                 else if (CGRectGetMaxY(frame) > screenHeight) frame.origin.y = screenHeight - CGRectGetHeight(frame);
             }
-            
+
             [self DLGMemUIView].frame = frame;
         } else {
             self.dragging = NO;
-            
+
             CGRect screenBounds = [UIScreen mainScreen].bounds;
             CGFloat screenWidth = CGRectGetWidth(screenBounds);
             CGFloat screenHeight = CGRectGetHeight(screenBounds);
-            
+
             if ([self DLGMemUIView].shouldNotBeDragged) {
                 CGRect screenBounds = [UIScreen mainScreen].bounds;
                 CGFloat screenWidth = CGRectGetWidth(screenBounds);
                 CGFloat screenHeight = CGRectGetHeight(screenBounds);
-                
+
                 if (CGRectGetMinX(frame) < 0) frame.origin.x = 0;
                 else if (CGRectGetMaxX(frame) > screenWidth) frame.origin.x = screenWidth - CGRectGetWidth(frame);
                 if (CGRectGetMinY(frame) < 0) frame.origin.y = 0;
                 else if (CGRectGetMaxY(frame) > screenHeight) frame.origin.y = screenHeight - CGRectGetHeight(frame);
-                
-                
+
+
                 [UIView animateWithDuration:0.2f
                                       delay:0.0f
                                     options:UIViewAnimationOptionBeginFromCurrentState
@@ -109,9 +102,9 @@
                 CGFloat h = CGRectGetHeight(frame);
                 CGFloat x = frame.origin.x;
                 CGFloat y = frame.origin.y;
-                
+
                 CGFloat margin = 20;
-                
+
                 if ((x < margin ) || (x > screenWidth - w - margin)) {
                     if (x < (screenWidth - w) / 2) { x = 0; }
                     else { x = screenWidth - w; }
@@ -131,7 +124,7 @@
                 }
                 frame.origin.x = x;
                 frame.origin.y = y;
-                
+
                 [UIView animateWithDuration:0.2f
                                       delay:0.0f
                                     options:UIViewAnimationOptionBeginFromCurrentState

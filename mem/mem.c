@@ -1,10 +1,3 @@
-//
-//  mem.c
-//  mem
-//
-//  Created by Liu Junqi on 3/23/18.
-//  Copyright © 2018 DeviLeo. All rights reserved.
-//
 
 #include "mem.h"
 #include "mem_utils.h"
@@ -13,13 +6,9 @@
 
 #define NUM_SEARCH_THREADS 8
 
-#if TARGET_OS_IPHONE || TARGET_IPHONE_SIMULATOR // Imports from /usr/lib/system/libsystem_kernel.dylib
-// xnu-4570.1.46/osfmk/vm/vm_user.c
+#if TARGET_OS_IPHONE || TARGET_IPHONE_SIMULATOR
 
-/*
- * Do NOT use mach_vm_read, it will cause memory leak.
- * Use mach_vm_read_overwrite instead.
- */
+
 extern kern_return_t
 mach_vm_read(
              vm_map_t               map,
@@ -46,12 +35,12 @@ mach_vm_write(
 extern kern_return_t
 mach_vm_region(
                vm_map_t                 map,
-               mach_vm_offset_t         *address,       /* IN/OUT */
-               mach_vm_size_t           *size,          /* OUT */
-               vm_region_flavor_t       flavor,         /* IN */
-               vm_region_info_t         info,           /* OUT */
-               mach_msg_type_number_t   *count,         /* IN/OUT */
-               mach_port_t              *object_name);  /* OUT */
+               mach_vm_offset_t         *address,
+               mach_vm_size_t           *size,
+               vm_region_flavor_t       flavor,
+               vm_region_info_t         info,
+               mach_msg_type_number_t   *count,
+               mach_port_t              *object_name);
 
 extern kern_return_t
 mach_vm_region_recurse(
@@ -84,7 +73,7 @@ void all_processes(int uid) {
     if (st == 0) {
         size_t count = (size / sizeof(struct kinfo_proc));
         if (count == 0) {
-            printf("No process.\n");
+            printf("no process\n");
         } else {
             printf("[pid] <uid:gid> name\n");
             for (size_t i = count - 1; i > 0; --i) {
@@ -98,23 +87,23 @@ void all_processes(int uid) {
             }
         }
     } else {
-        printf("Failed to fetch process. ret: %d, errno: %d\n", st, errno);
+        printf("process list no fetch, ret %d, errno %d\n", st, errno);
     }
-    
+
     free(process);
 }
 
 mach_port_t get_task(int pid) {
     mach_port_t task = 0;
-    printf("Getting task %d...", pid);
+    printf("get task %d...", pid);
     kern_return_t kret = task_for_pid(mach_task_self(), pid, &task);
-    if (kret == KERN_SUCCESS) { printf("Success.\n"); }
-    else { printf("FAIL.\n"); }
+    if (kret == KERN_SUCCESS) { printf("ok\n"); }
+    else { printf("no work\n"); }
     return task;
 }
 
 vm_map_offset_t get_base_address(mach_port_t task) {
-    printf("Getting base address...");
+    printf("get base address...");
     vm_map_offset_t vmoffset = 0;
     vm_map_size_t vmsize = 0;
     uint32_t nesting_depth = 0;
@@ -124,7 +113,7 @@ vm_map_offset_t get_base_address(mach_port_t task) {
     if (kret == KERN_SUCCESS) {
         printf("%016llX %lld bytes.\n", vmoffset, vmsize);
     } else {
-        printf("FAIL.\n");
+        printf("no work\n");
     }
     return vmoffset;
 }
@@ -136,16 +125,16 @@ void read_mem(mach_port_t task) {
     mach_port_t object_name = 0;
     vm_region_basic_info_data_64_t info;
     mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
-    
+
     kern_return_t kret = mach_vm_region(task, &address, &region_size, flavor, (vm_region_info_t)&info, &info_count, &object_name);
     while (kret == KERN_SUCCESS) {
         vm_prot_t protection = info.protection;
-        
+
         char r = (protection & VM_PROT_READ) ? 'r' : '-';
         char w = (protection & VM_PROT_WRITE) ? 'w' : '-';
         char x = (protection & VM_PROT_EXECUTE) ? 'x' : '-';
-        printf("Region: %016llX %c%c%c %llu bytes\n", address, r, w, x, region_size);
-        
+        printf("region: %016llX %c%c%c %llu bytes\n", address, r, w, x, region_size);
+
         void *data = malloc(region_size);
         mach_vm_size_t data_size = 0;
         kern_return_t kret_read = mach_vm_read_overwrite(task, address, region_size, (mach_vm_address_t)data, &data_size);
@@ -164,7 +153,7 @@ void *read_range_mem(mach_port_t task, mach_vm_address_t address, int forward, i
     mach_port_t object_name = 0;
     vm_region_basic_info_data_64_t info;
     mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
-    
+
     kern_return_t kret = mach_vm_region(task, &region_address, &region_size, flavor, (vm_region_info_t)&info, &info_count, &object_name);
     if (kret == KERN_SUCCESS) {
         mach_vm_address_t a = 0;
@@ -183,7 +172,7 @@ void *read_range_mem(mach_port_t task, mach_vm_address_t address, int forward, i
             if (b > backward) b = backward;
             a = address - f;
         }
-        
+
         mach_vm_size_t size = f + b;
         void *data = malloc(size);
         mach_vm_size_t data_size = 0;
@@ -203,7 +192,7 @@ int read_region(mach_port_t task, mach_vm_address_t address, vm_region_basic_inf
     mach_port_t object_name = 0;
     vm_region_basic_info_data_64_t info;
     mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
-    
+
     kern_return_t kret = mach_vm_region(task, &address, &region_size, flavor, (vm_region_info_t)&info, &info_count, &object_name);
     if (kret != KERN_SUCCESS) return -1;
     if (region_info) *region_info = info;
@@ -214,16 +203,12 @@ int write_mem(mach_port_t task, mach_vm_address_t address, void *value, int size
     vm_region_basic_info_data_64_t info;
     int ret = read_region(task, address, &info);
     if (ret != 1) return -1;
-//    kern_return_t kret = task_suspend(task);
-//    if (kret != KERN_SUCCESS) return -2;
     kern_return_t kret = mach_vm_protect(task, address, size, FALSE, VM_PROT_WRITE | VM_PROT_READ | VM_PROT_COPY);
     if (kret != KERN_SUCCESS) { task_resume(task); return -3; }
     kret = mach_vm_write(task, address, (pointer_t)value, size);
     if (kret != KERN_SUCCESS) { task_resume(task); return -4; }
     kret = mach_vm_protect(task, address, size, FALSE, info.protection);
     if (kret != KERN_SUCCESS) { task_resume(task); return -5; }
-//    kret = task_resume(task);
-//    if (kret != KERN_SUCCESS) return -6;
     return 1;
 }
 
@@ -300,7 +285,6 @@ void *search_thread_worker(void *arg) {
         }
         free(data);
 
-        // progress
         if (ctx->progress_callback && ctx->progress_mutex) {
             pthread_mutex_lock(ctx->progress_mutex);
             (*ctx->progress_counter)++;
@@ -313,13 +297,11 @@ void *search_thread_worker(void *arg) {
         region = region->next;
     }
 
-    // merge with global results
     if (local_chain && ctx->result_mutex) {
         pthread_mutex_lock(ctx->result_mutex);
         if (ctx->results == NULL) {
             ctx->results = local_chain;
         } else {
-            // append to the end
             search_result_chain_t tail = ctx->results;
             while (tail->next) tail = tail->next;
             tail->next = local_chain;
@@ -370,7 +352,6 @@ search_result_chain_t search_mem_first_with_progress(mach_port_t task, void *val
         return NULL;
     }
 
-    // prep
     int regions_per_thread = (total_regions + NUM_SEARCH_THREADS - 1) / NUM_SEARCH_THREADS;
     pthread_t threads[NUM_SEARCH_THREADS];
     thread_search_context_t contexts[NUM_SEARCH_THREADS];
@@ -417,7 +398,6 @@ search_result_chain_t search_mem_first_with_progress(mach_port_t task, void *val
         }
     }
 
-    // collect results
     for (int i = 0; i < thread_count; i++) {
         pthread_join(threads[i], NULL);
         if (contexts[i].results) {
@@ -475,7 +455,7 @@ search_result_chain_t search_mem_in_chain(mach_port_t task, void *value, int siz
                 }
             }
         }
-        
+
         if (destroy_chain == 1) {
             if (prev_chain == NULL) {
                 head_chain = chain->next;
@@ -502,7 +482,7 @@ void review_mem_in_chain(mach_port_t task, search_result_chain_t chain) {
             mach_vm_offset_t address = chain->result->address;
             void *data = malloc(chain->result->size);
             mach_vm_size_t data_size = 0;
-            
+
             kern_return_t kret_read = mach_vm_read_overwrite(task, address, chain->result->size, (mach_vm_address_t)data, &data_size);
             if (kret_read == KERN_SUCCESS) {
                 memcpy(chain->result->value, data, data_size);

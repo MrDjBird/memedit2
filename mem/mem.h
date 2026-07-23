@@ -1,10 +1,3 @@
-//
-//  mem.h
-//  mem
-//
-//  Created by Liu Junqi on 3/23/18.
-//  Copyright © 2018 DeviLeo. All rights reserved.
-//
 
 #ifndef mem_h
 #define mem_h
@@ -32,4 +25,4 @@ void review_mem_in_chain(mach_port_t task, search_result_chain_t chain);
 search_result_chain_t search_mem(mach_port_t task, void *value, int size, int type, int comparison, search_result_chain_t chain, int *length);
 search_result_chain_t search_mem_with_progress(mach_port_t task, void *value, int size, int type, int comparison, search_result_chain_t chain, int *length, search_progress_callback_t progress_callback, void *user_data);
 
-#endif /* mem_h */
+#endif

@@ -7,6 +7,10 @@
 @property (nonatomic) UILabel *titleLabel;
 @property (nonatomic) UIButton *btnMemoryEditor;
 @property (nonatomic) UIButton *btnUnityHax;
+#if !JAILED
+@property (nonatomic) UIButton *btnUnityHooks;
+#endif
+@property (nonatomic) UIButton *btnSpeedHack;
 @property (nonatomic) UIButton *btnCancel;
 
 @end
@@ -73,7 +77,13 @@
         [container.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
         [container.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
         [container.widthAnchor constraintEqualToConstant:280],
-        [container.heightAnchor constraintEqualToConstant:412]
+        [container.heightAnchor constraintEqualToConstant:
+#if JAILED
+         478
+#else
+         544
+#endif
+        ]
     ]];
 
     self.menuContainer = container;
@@ -108,6 +118,18 @@
     [self.menuContainer addSubview:unityHaxBtn];
     self.btnUnityHax = unityHaxBtn;
 
+#if !JAILED
+    UIButton *unityHooksBtn = [self createMenuButton:@"Unity Hooks" icon:@"bolt.fill"];
+    [unityHooksBtn addTarget:self action:@selector(onUnityHooksTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [self.menuContainer addSubview:unityHooksBtn];
+    self.btnUnityHooks = unityHooksBtn;
+#endif
+
+    UIButton *speedHackBtn = [self createMenuButton:@"Speed Hack" icon:@"speedometer"];
+    [speedHackBtn addTarget:self action:@selector(onSpeedHackTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [self.menuContainer addSubview:speedHackBtn];
+    self.btnSpeedHack = speedHackBtn;
+
     UIButton *cancelBtn = [self createMenuButton:@"Cancel" icon:@"xmark"];
     cancelBtn.backgroundColor = [UIColor colorWithWhite:0.2 alpha:0.8];
     [cancelBtn addTarget:self action:@selector(onCancelTapped:) forControlEvents:UIControlEventTouchUpInside];
@@ -125,37 +147,54 @@
         [unityHaxBtn.trailingAnchor constraintEqualToAnchor:self.menuContainer.trailingAnchor constant:-20],
         [unityHaxBtn.heightAnchor constraintEqualToConstant:54],
 
-        [cancelBtn.topAnchor constraintEqualToAnchor:unityHaxBtn.bottomAnchor constant:12],
+        [speedHackBtn.topAnchor constraintEqualToAnchor:
+#if JAILED
+         unityHaxBtn.bottomAnchor
+#else
+         unityHooksBtn.bottomAnchor
+#endif
+         constant:12],
+        [speedHackBtn.leadingAnchor constraintEqualToAnchor:self.menuContainer.leadingAnchor constant:20],
+        [speedHackBtn.trailingAnchor constraintEqualToAnchor:self.menuContainer.trailingAnchor constant:-20],
+        [speedHackBtn.heightAnchor constraintEqualToConstant:54],
+
+        [cancelBtn.topAnchor constraintEqualToAnchor:speedHackBtn.bottomAnchor constant:12],
         [cancelBtn.leadingAnchor constraintEqualToAnchor:self.menuContainer.leadingAnchor constant:20],
         [cancelBtn.trailingAnchor constraintEqualToAnchor:self.menuContainer.trailingAnchor constant:-20],
         [cancelBtn.heightAnchor constraintEqualToConstant:54]
     ]];
+
+#if !JAILED
+    [NSLayoutConstraint activateConstraints:@[
+        [unityHooksBtn.topAnchor constraintEqualToAnchor:unityHaxBtn.bottomAnchor constant:12],
+        [unityHooksBtn.leadingAnchor constraintEqualToAnchor:self.menuContainer.leadingAnchor constant:20],
+        [unityHooksBtn.trailingAnchor constraintEqualToAnchor:self.menuContainer.trailingAnchor constant:-20],
+        [unityHooksBtn.heightAnchor constraintEqualToConstant:54]
+    ]];
+#endif
 }
 
 - (UIButton *)createMenuButton:(NSString *)title icon:(NSString *)iconName {
     UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
     btn.translatesAutoresizingMaskIntoConstraints = NO;
-    btn.backgroundColor = [UIColor colorWithRed:0.0 green:0.478 blue:1.0 alpha:0.9];
-    btn.layer.cornerRadius = 12;
 
-    [btn setTitle:title forState:UIControlStateNormal];
-    [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    btn.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
-
-    if (@available(iOS 13.0, *)) {
-        UIImage *icon = [UIImage systemImageNamed:iconName];
-        if (icon) {
-            [btn setImage:icon forState:UIControlStateNormal];
-            btn.tintColor = [UIColor whiteColor];
-            btn.imageEdgeInsets = UIEdgeInsetsMake(0, -8, 0, 0);
-            btn.titleEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 0);
-        }
-    }
+    UIButtonConfiguration *configuration = [UIButtonConfiguration filledButtonConfiguration];
+    configuration.title = title;
+    configuration.image = [UIImage systemImageNamed:iconName];
+    configuration.imagePadding = 8;
+    configuration.baseForegroundColor = UIColor.whiteColor;
+    configuration.baseBackgroundColor = [UIColor colorWithRed:0.0 green:0.478 blue:1.0 alpha:0.9];
+    configuration.cornerStyle = UIButtonConfigurationCornerStyleMedium;
+    configuration.titleTextAttributesTransformer = ^NSDictionary<NSAttributedStringKey, id> *(NSDictionary<NSAttributedStringKey, id> *attributes) {
+        NSMutableDictionary *updatedAttributes = [attributes mutableCopy];
+        updatedAttributes[NSFontAttributeName] = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
+        return updatedAttributes;
+    };
+    btn.configuration = configuration;
 
     return btn;
 }
 
-#pragma mark - Actions
 
 - (void)onMemoryEditorTapped:(id)sender {
     if ([self.delegate respondsToSelector:@selector(DLGMemUIMenuDidSelectMemoryEditor:)]) {
@@ -171,6 +210,22 @@
     [self hideAnimated:YES];
 }
 
+- (void)onSpeedHackTapped:(id)sender {
+    if ([self.delegate respondsToSelector:@selector(DLGMemUIMenuDidSelectSpeedHack:)]) {
+        [self.delegate DLGMemUIMenuDidSelectSpeedHack:self];
+    }
+    [self hideAnimated:YES];
+}
+
+#if !JAILED
+- (void)onUnityHooksTapped:(id)sender {
+    if ([self.delegate respondsToSelector:@selector(DLGMemUIMenuDidSelectUnityHooks:)]) {
+        [self.delegate DLGMemUIMenuDidSelectUnityHooks:self];
+    }
+    [self hideAnimated:YES];
+}
+#endif
+
 - (void)onCancelTapped:(id)sender {
     if ([self.delegate respondsToSelector:@selector(DLGMemUIMenuDidCancel:)]) {
         [self.delegate DLGMemUIMenuDidCancel:self];
@@ -182,7 +237,6 @@
     [self onCancelTapped:sender];
 }
 
-#pragma mark - Show/Hide
 
 - (void)showInView:(UIView *)view animated:(BOOL)animated {
     if (!view) return;

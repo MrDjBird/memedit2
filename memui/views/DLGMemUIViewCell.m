@@ -1,10 +1,3 @@
-//
-//  DLGMemUIViewCell.m
-//  memui
-//
-//  Created by Liu Junqi on 4/24/18.
-//  Copyright © 2018 DeviLeo. All rights reserved.
-//
 
 #import "DLGMemUIViewCell.h"
 
@@ -123,13 +116,13 @@
     lbl.textColor = [UIColor whiteColor];
     lbl.text = @"Value";
     [self.contentView addSubview:lbl];
-    
+
     NSDictionary *views = @{@"addr":self.lblAddress, @"lbl":lbl};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:[addr]-8-[lbl]" options:0 metrics:nil views:views];
     [self.contentView addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[lbl]|" options:0 metrics:nil views:views];
     [self.contentView addConstraints:cv];
-    
+
     self.lblValue = lbl;
 }
 
@@ -140,13 +133,13 @@
     [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [btn addTarget:self action:@selector(onViewMemoryButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
     [self.contentView addSubview:btn];
-    
+
     NSDictionary *views = @{@"btn":btn};
     NSArray *ch = [NSLayoutConstraint constraintsWithVisualFormat:@"H:[btn(32)]|" options:0 metrics:nil views:views];
     [self.contentView addConstraints:ch];
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[btn]|" options:0 metrics:nil views:views];
     [self.contentView addConstraints:cv];
-    
+
     self.btnViewMemory = btn;
 }
 
@@ -156,18 +149,17 @@
     [btn setTitle:@"M" forState:UIControlStateNormal];
     [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     btn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
-    // btn.backgroundColor = [UIColor colorWithRed:0.0 green:0.478 blue:1.0 alpha:1.0];
     btn.layer.cornerRadius = 6;
-    
+
     [self.contentView addSubview:btn];
-    
+
     [NSLayoutConstraint activateConstraints:@[
         [btn.leadingAnchor constraintEqualToAnchor:self.tfValue.trailingAnchor constant:8],
         [btn.trailingAnchor constraintEqualToAnchor:self.btnViewMemory.leadingAnchor constant:-8],
         [btn.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
         [btn.heightAnchor constraintEqualToConstant:32]
     ]];
-    
+
     [btn addTarget:self action:@selector(onModButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
     self.btnMod = btn;
 }
@@ -185,20 +177,20 @@
     tf.layer.cornerRadius = 6;
     tf.layer.borderWidth = 1;
     tf.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.1].CGColor;
-    
+
     UIView *paddingView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 8, 20)];
     tf.leftView = paddingView;
     tf.leftViewMode = UITextFieldViewModeAlways;
-    
+
     [self.contentView addSubview:tf];
-    
+
     [NSLayoutConstraint activateConstraints:@[
         [tf.leadingAnchor constraintEqualToAnchor:self.lblAddress.trailingAnchor constant:8],
         [tf.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
         [tf.widthAnchor constraintEqualToConstant:120],
         [tf.heightAnchor constraintEqualToConstant:32]
     ]];
-    
+
     self.tfValue = tf;
 }
 
@@ -225,7 +217,6 @@
     self.checkbox = cb;
 }
 
-#pragma mark - Setter / Getter
 - (void)setAddress:(NSString *)address {
     _address = address;
     self.lblAddress.text = address;
@@ -258,7 +249,6 @@
     self.checkbox.selected = checked;
 }
 
-#pragma mark - Events
 - (void)onModButtonTapped:(id)sender {
     if (self.modifying) {
         [self.tfValue resignFirstResponder];

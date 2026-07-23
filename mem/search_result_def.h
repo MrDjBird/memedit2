@@ -1,10 +1,3 @@
-//
-//  search_result_def.h
-//  mem
-//
-//  Created by Liu Junqi on 3/27/18.
-//  Copyright © 2018 DeviLeo. All rights reserved.
-//
 
 #ifndef search_result_def_h
 #define search_result_def_h
@@ -44,4 +37,4 @@ struct search_result_chain {
 };
 typedef struct search_result_chain *search_result_chain_t;
 
-#endif /* search_result_def_h */
+#endif

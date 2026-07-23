@@ -1,12 +1,17 @@
 #import "DLGUnityHaxView.h"
-#import "DLGUnityHaxAlert.h"
+#import "MEAlert.h"
+#import "../MEStore.h"
 #import "../../RemoteLog.h"
 #include "../../il2cpp/il2cpp_helper.h"
+#if !JAILED
+#import "../../il2cpp/DLGUnityHookManager.h"
+#endif
 
-#define UNITY_LOG(fmt, ...) RLog(@"[UnityHax] " fmt, ##__VA_ARGS__)
+#define UNITY_LOG(fmt, ...) RLog(@"[unity hax] " fmt, ##__VA_ARGS__)
 
 typedef enum {
     UNITY_VIEW_MODE_CLASSES,
+    UNITY_VIEW_MODE_GLOBAL_METHODS,
     UNITY_VIEW_MODE_METHODS,
     UNITY_VIEW_MODE_FIELDS,
     UNITY_VIEW_MODE_INSTANCES
@@ -32,13 +37,15 @@ typedef enum {
 @property (nonatomic) Il2CppInstanceEnumResult *instanceResults;
 @property (nonatomic) Il2CppClass *selectedClass;
 @property (nonatomic) void *selectedInstance;
+@property (nonatomic) dispatch_queue_t globalMethodSearchQueue;
+@property (atomic) NSUInteger globalMethodSearchGeneration;
 
 @end
 
 @implementation DLGUnityHaxView
 
 - (instancetype)init {
-    UNITY_LOG(@"Init called");
+    UNITY_LOG(@"init called");
     self = [super init];
     if (self) {
         self.viewMode = UNITY_VIEW_MODE_CLASSES;
@@ -48,6 +55,8 @@ typedef enum {
         self.instanceResults = NULL;
         self.selectedClass = NULL;
         self.selectedInstance = NULL;
+        self.globalMethodSearchQueue = dispatch_queue_create("com.mineek.memedit.il2cpp-method-search", DISPATCH_QUEUE_SERIAL);
+        self.globalMethodSearchGeneration = 0;
         [self initViews];
     }
     return self;
@@ -151,7 +160,6 @@ typedef enum {
 
     self.titleLabel = label;
 
-    // close button
     UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     closeBtn.translatesAutoresizingMaskIntoConstraints = NO;
     if (@available(iOS 13.0, *)) {
@@ -172,7 +180,6 @@ typedef enum {
 
     self.btnClose = closeBtn;
 
-    // back button
     UIButton *backBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     backBtn.translatesAutoresizingMaskIntoConstraints = NO;
     if (@available(iOS 13.0, *)) {
@@ -196,11 +203,12 @@ typedef enum {
 }
 
 - (void)initViewModeControl {
-    UISegmentedControl *control = [[UISegmentedControl alloc] initWithItems:@[@"Classes"]];
+    UISegmentedControl *control = [[UISegmentedControl alloc] initWithItems:@[@"Classes", @"★ Favorites", @"Functions"]];
     control.translatesAutoresizingMaskIntoConstraints = NO;
+    [control setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor whiteColor]} forState:UIControlStateNormal];
+    [control setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor whiteColor]} forState:UIControlStateSelected];
     control.selectedSegmentIndex = 0;
-    control.hidden = YES; //we only haev classes anyway
-    [control addTarget:self action:@selector(onViewModeChanged:) forControlEvents:UIControlEventValueChanged];
+    [control addTarget:self action:@selector(onClassScopeChanged:) forControlEvents:UIControlEventValueChanged];
     [self.containerView addSubview:control];
 
     [NSLayoutConstraint activateConstraints:@[
@@ -275,7 +283,7 @@ typedef enum {
     if (@available(iOS 13.0, *)) {
         indicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
     } else {
-        indicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhiteLarge];
+        indicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
     }
     indicator.translatesAutoresizingMaskIntoConstraints = NO;
     indicator.color = [UIColor whiteColor];
@@ -290,13 +298,13 @@ typedef enum {
     self.loadingIndicator = indicator;
 }
 
-#pragma mark - Actions
 
 - (void)onCloseButtonTapped:(id)sender {
     [self hideAnimated:YES];
 }
 
 - (void)onBackButtonTapped:(id)sender {
+    self.globalMethodSearchGeneration++;
     self.viewMode = UNITY_VIEW_MODE_CLASSES;
     self.selectedClass = NULL;
     self.selectedInstance = NULL;
@@ -310,8 +318,12 @@ typedef enum {
     }
     self.btnBack.hidden = YES;
     self.instanceModeControl.hidden = YES;
+    self.viewModeControl.hidden = NO;
     self.titleLabel.text = @"Unity Hax";
     self.searchBar.placeholder = @"Search classes...";
+
+    [MEStore shared].lastClassFullName = nil;
+
     [self.tableView reloadData];
 }
 
@@ -319,28 +331,112 @@ typedef enum {
     [self onCloseButtonTapped:sender];
 }
 
-- (void)onViewModeChanged:(UISegmentedControl *)sender {
-    self.viewMode = UNITY_VIEW_MODE_CLASSES;
-    self.searchBar.placeholder = @"Search classes...";
+- (void)onClassScopeChanged:(UISegmentedControl *)sender {
+    self.globalMethodSearchGeneration++;
+    if (sender.selectedSegmentIndex == 2) {
+        self.viewMode = UNITY_VIEW_MODE_GLOBAL_METHODS;
+        self.searchBar.placeholder = @"Search all functions by name...";
+        [self reloadGlobalFunctionList];
+    } else {
+        self.viewMode = UNITY_VIEW_MODE_CLASSES;
+        self.searchBar.placeholder = @"Search classes...";
+        [self.loadingIndicator stopAnimating];
+        self.tableView.hidden = NO;
+        [self reloadClassList];
+    }
+}
+
+- (void)reloadClassList {
+    NSString *query = self.searchBar.text ?: @"";
+    BOOL favoritesOnly = (self.viewModeControl.selectedSegmentIndex == 1);
+
+    if (self.classResults) {
+        il2cpp_free_enum_result(self.classResults);
+        self.classResults = NULL;
+    }
+
+    if (favoritesOnly) {
+        NSArray<NSDictionary *> *favs = [[MEStore shared] favoriteClasses];
+        NSString *q = query.lowercaseString;
+        NSMutableArray<NSString *> *names = [NSMutableArray array];
+        for (NSDictionary *f in favs) {
+            NSString *full = f[@"fullName"];
+            if (full.length == 0) continue;
+            if (q.length == 0 || [full.lowercaseString containsString:q]) {
+                [names addObject:full];
+            }
+        }
+        const char **cnames = NULL;
+        if (names.count > 0) {
+            cnames = (const char **)malloc(sizeof(char *) * names.count);
+            for (NSUInteger i = 0; i < names.count; i++) {
+                cnames[i] = [names[i] UTF8String];
+            }
+        }
+        self.classResults = il2cpp_classes_from_names(cnames, (int)names.count);
+        if (cnames) free(cnames);
+    } else if (query.length == 0) {
+        self.classResults = il2cpp_enumerate_classes();
+    } else {
+        self.classResults = il2cpp_search_classes([query UTF8String]);
+    }
+
     [self.tableView reloadData];
+}
+
+- (void)reloadGlobalFunctionList {
+    NSString *query = [self.searchBar.text stringByTrimmingCharactersInSet:
+                       [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSUInteger generation = ++self.globalMethodSearchGeneration;
+
+    if (self.methodResults) {
+        il2cpp_free_method_enum_result(self.methodResults);
+        self.methodResults = NULL;
+    }
+    [self.tableView reloadData];
+
+    if (query.length == 0) {
+        [self.loadingIndicator stopAnimating];
+        self.tableView.hidden = NO;
+        return;
+    }
+
+    [self.loadingIndicator startAnimating];
+    self.tableView.hidden = YES;
+
+    dispatch_async(self.globalMethodSearchQueue, ^{
+        if (generation != self.globalMethodSearchGeneration) return;
+        Il2CppMethodEnumResult *methods = il2cpp_search_all_methods([query UTF8String]);
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != self.globalMethodSearchGeneration ||
+                self.viewMode != UNITY_VIEW_MODE_GLOBAL_METHODS) {
+                if (methods) il2cpp_free_method_enum_result(methods);
+                return;
+            }
+
+            self.methodResults = methods;
+            [self.loadingIndicator stopAnimating];
+            self.tableView.hidden = NO;
+            [self.tableView reloadData];
+        });
+    });
 }
 
 - (void)onInstanceModeChanged:(UISegmentedControl *)sender {
     if (sender.selectedSegmentIndex == 0) {
-        // fields
         [self showFieldsForInstance:self.selectedInstance];
     } else {
-        // methods
         [self showMethodsForInstance:self.selectedInstance];
     }
 }
 
-#pragma mark - UITableViewDataSource
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (self.viewMode == UNITY_VIEW_MODE_CLASSES) {
         return self.classResults ? self.classResults->class_count : 0;
-    } else if (self.viewMode == UNITY_VIEW_MODE_METHODS) {
+    } else if (self.viewMode == UNITY_VIEW_MODE_METHODS ||
+               self.viewMode == UNITY_VIEW_MODE_GLOBAL_METHODS) {
         return self.methodResults ? self.methodResults->method_count : 0;
     } else if (self.viewMode == UNITY_VIEW_MODE_FIELDS) {
         return self.fieldResults ? self.fieldResults->field_count : 0;
@@ -375,7 +471,10 @@ typedef enum {
     if (self.viewMode == UNITY_VIEW_MODE_CLASSES) {
         if (self.classResults && indexPath.row < self.classResults->class_count) {
             Il2CppClassInfo info = self.classResults->classes[indexPath.row];
-            cell.textLabel.text = [NSString stringWithUTF8String:info.name];
+            NSString *name = [NSString stringWithUTF8String:info.name];
+            NSString *fullName = [NSString stringWithUTF8String:info.full_name];
+            BOOL favorited = [[MEStore shared] isClassFavorited:fullName];
+            cell.textLabel.text = favorited ? [@"★ " stringByAppendingString:name] : name;
             if (strlen(info.namespace) > 0) {
                 cell.detailTextLabel.text = [NSString stringWithUTF8String:info.namespace];
             } else {
@@ -383,13 +482,21 @@ typedef enum {
             }
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
-    } else if (self.viewMode == UNITY_VIEW_MODE_METHODS) {
+    } else if (self.viewMode == UNITY_VIEW_MODE_METHODS ||
+               self.viewMode == UNITY_VIEW_MODE_GLOBAL_METHODS) {
         if (self.methodResults && indexPath.row < self.methodResults->method_count) {
             Il2CppMethodInfo info = self.methodResults->methods[indexPath.row];
             cell.textLabel.text = [NSString stringWithUTF8String:info.name];
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"%s → %s",
-                                         info.is_static ? "static" : "instance",
-                                         info.return_type];
+            if (self.viewMode == UNITY_VIEW_MODE_GLOBAL_METHODS) {
+                cell.detailTextLabel.text = [NSString stringWithFormat:@"%s • %s → %s",
+                                             info.class_full_name,
+                                             info.is_static ? "static" : "instance",
+                                             info.return_type];
+            } else {
+                cell.detailTextLabel.text = [NSString stringWithFormat:@"%s → %s",
+                                             info.is_static ? "static" : "instance",
+                                             info.return_type];
+            }
             cell.accessoryType = UITableViewCellAccessoryDetailButton;
         }
     } else if (self.viewMode == UNITY_VIEW_MODE_FIELDS) {
@@ -404,7 +511,7 @@ typedef enum {
     } else if (self.viewMode == UNITY_VIEW_MODE_INSTANCES) {
         if (self.instanceResults && indexPath.row < self.instanceResults->instance_count) {
             Il2CppInstanceInfo info = self.instanceResults->instances[indexPath.row];
-            cell.textLabel.text = [NSString stringWithFormat:@"Instance %d", indexPath.row];
+            cell.textLabel.text = [NSString stringWithFormat:@"Instance %ld", (long)indexPath.row];
             cell.detailTextLabel.text = [NSString stringWithFormat:@"0x%lx", (unsigned long)info.instance];
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
@@ -413,7 +520,6 @@ typedef enum {
     return cell;
 }
 
-#pragma mark - UITableViewDelegate
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
@@ -423,10 +529,15 @@ typedef enum {
             Il2CppClassInfo info = self.classResults->classes[indexPath.row];
             [self showClassOptionsForClass:info.klass className:[NSString stringWithUTF8String:info.full_name]];
         }
-    } else if (self.viewMode == UNITY_VIEW_MODE_METHODS) {
+    } else if (self.viewMode == UNITY_VIEW_MODE_METHODS ||
+               self.viewMode == UNITY_VIEW_MODE_GLOBAL_METHODS) {
         if (self.methodResults && indexPath.row < self.methodResults->method_count) {
             Il2CppMethodInfo info = self.methodResults->methods[indexPath.row];
-            [self showInvokeOptionsForMethod:info];
+            if (self.viewMode == UNITY_VIEW_MODE_GLOBAL_METHODS) {
+                self.selectedClass = info.klass;
+                self.selectedInstance = NULL;
+            }
+            [self showMethodActionsForMethod:info];
         }
     } else if (self.viewMode == UNITY_VIEW_MODE_INSTANCES) {
         if (self.instanceResults && indexPath.row < self.instanceResults->instance_count) {
@@ -437,7 +548,8 @@ typedef enum {
 }
 
 - (void)tableView:(UITableView *)tableView accessoryButtonTappedForRowWithIndexPath:(NSIndexPath *)indexPath {
-    if (self.viewMode == UNITY_VIEW_MODE_METHODS) {
+    if (self.viewMode == UNITY_VIEW_MODE_METHODS ||
+        self.viewMode == UNITY_VIEW_MODE_GLOBAL_METHODS) {
         if (self.methodResults && indexPath.row < self.methodResults->method_count) {
             Il2CppMethodInfo info = self.methodResults->methods[indexPath.row];
             [self showMethodDetails:info];
@@ -450,20 +562,20 @@ typedef enum {
     }
 }
 
-#pragma mark - UISearchBarDelegate
 
 - (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText {
-    if (searchText.length == 0) {
-        if (self.classResults) {
-            il2cpp_free_enum_result(self.classResults);
+    [MEStore shared].lastSearchText = searchText;
+    if (self.viewMode == UNITY_VIEW_MODE_CLASSES) {
+        [self reloadClassList];
+    } else if (self.viewMode == UNITY_VIEW_MODE_GLOBAL_METHODS) {
+        [self reloadGlobalFunctionList];
+    } else if (self.viewMode == UNITY_VIEW_MODE_METHODS && self.selectedClass) {
+        if (self.methodResults) {
+            il2cpp_free_method_enum_result(self.methodResults);
         }
-        self.classResults = il2cpp_enumerate_classes();
-        [self.tableView reloadData];
-    } else {
-        if (self.classResults) {
-            il2cpp_free_enum_result(self.classResults);
-        }
-        self.classResults = il2cpp_search_classes([searchText UTF8String]);
+        self.methodResults = searchText.length == 0
+            ? il2cpp_enumerate_methods(self.selectedClass)
+            : il2cpp_search_methods(self.selectedClass, [searchText UTF8String]);
         [self.tableView reloadData];
     }
 }
@@ -475,18 +587,21 @@ typedef enum {
 - (void)searchBarCancelButtonClicked:(UISearchBar *)searchBar {
     [searchBar resignFirstResponder];
     searchBar.text = @"";
+    [MEStore shared].lastSearchText = nil;
     if (self.viewMode == UNITY_VIEW_MODE_CLASSES) {
-        if (self.classResults) {
-            il2cpp_free_enum_result(self.classResults);
-        }
-        self.classResults = il2cpp_enumerate_classes();
+        [self reloadClassList];
+    } else if (self.viewMode == UNITY_VIEW_MODE_GLOBAL_METHODS) {
+        [self reloadGlobalFunctionList];
+    } else if (self.viewMode == UNITY_VIEW_MODE_METHODS && self.selectedClass) {
+        if (self.methodResults) il2cpp_free_method_enum_result(self.methodResults);
+        self.methodResults = il2cpp_enumerate_methods(self.selectedClass);
         [self.tableView reloadData];
     }
 }
 
-#pragma mark - Helper Methods
 
 - (void)showMethodsForClass:(Il2CppClass *)klass className:(NSString *)className {
+    self.globalMethodSearchGeneration++;
     self.selectedClass = klass;
     self.viewMode = UNITY_VIEW_MODE_METHODS;
 
@@ -505,7 +620,11 @@ typedef enum {
             self.titleLabel.text = className;
             self.btnBack.hidden = NO;
             self.instanceModeControl.hidden = YES;
+            self.viewModeControl.hidden = YES;
             self.searchBar.placeholder = @"Search methods...";
+
+            [MEStore shared].lastClassFullName = className;
+            [MEStore shared].lastSubPage = 0;
 
             [self.loadingIndicator stopAnimating];
             self.tableView.hidden = NO;
@@ -521,21 +640,288 @@ typedef enum {
                          info.param_count,
                          info.is_static ? "Static" : "Instance"];
 
-    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-    alert.titleText = @"Method Details";
-    alert.messageText = message;
-    alert.buttonTitles = @[@"OK"];
+    UIAlertController *alert = MECreateAlert(@"Method Details", message, nil, nil, @[@"OK"], nil);
+    MEPresentAlert(alert, self, YES);
+}
 
-    [alert showInView:self animated:YES];
+- (NSString *)fullNameForClass:(Il2CppClass *)klass {
+    if (!klass) return @"";
+    const char *cname = il2cpp_class_get_name(klass);
+    const char *cns = il2cpp_class_get_namespace(klass);
+    NSString *name = cname ? [NSString stringWithUTF8String:cname] : @"";
+    NSString *ns = cns ? [NSString stringWithUTF8String:cns] : @"";
+    if (ns.length > 0) return [NSString stringWithFormat:@"%@.%@", ns, name];
+    return name;
+}
+
+- (void)showMethodActionsForMethod:(Il2CppMethodInfo)info {
+    NSArray<NSString *> *buttonTitles;
+    MEAlertHandler handler;
+#if JAILED
+    buttonTitles = @[@"Invoke Now", @"Save as Shortcut", @"Cancel"];
+    handler = ^(UIAlertController *controller, NSInteger buttonIndex) {
+        if (buttonIndex == 0) {
+            [self showInvokeOptionsForMethod:info];
+        } else if (buttonIndex == 1) {
+            [self saveShortcutForMethod:info];
+        }
+    };
+#else
+    void *methodPointer = info.method ? *(void **)info.method : NULL;
+    __block BOOL alreadyHooked = NO;
+    for (DLGUnityHook *hook in [[DLGUnityHookManager sharedManager] allHooks]) {
+        if (hook.methodPointer == (intptr_t)methodPointer) {
+            alreadyHooked = YES;
+            break;
+        }
+    }
+
+    buttonTitles = @[@"Invoke Now", @"Save as Shortcut",
+                     alreadyHooked ? @"Remove Hook" : @"Hook",
+                     @"Active Hooks", @"Cancel"];
+    handler = ^(UIAlertController *controller, NSInteger buttonIndex) {
+        if (buttonIndex == 0) {
+            [self showInvokeOptionsForMethod:info];
+        } else if (buttonIndex == 1) {
+            [self saveShortcutForMethod:info];
+        } else if (buttonIndex == 2) {
+            if (alreadyHooked) {
+                [[DLGUnityHookManager sharedManager]
+                    removeHookForMethodPointer:(intptr_t)methodPointer];
+                [self showInfoMessage:[NSString stringWithFormat:
+                    @"Hook removed from %s.", info.name]];
+            } else {
+                [self showHookMenuForMethod:info];
+            }
+        } else if (buttonIndex == 3) {
+            [self showActiveHooks];
+        }
+    };
+#endif
+    UIAlertController *alert = MECreateAlert([NSString stringWithUTF8String:info.name],
+                                             info.signature ? [NSString stringWithUTF8String:info.signature] : @"",
+                                             nil,
+                                             nil,
+                                             buttonTitles,
+                                             handler);
+    MEPresentAlert(alert, self, YES);
+}
+
+#if !JAILED
+- (void)showHookMenuForMethod:(Il2CppMethodInfo)info {
+    NSMutableArray<NSString *> *buttons = [NSMutableArray arrayWithArray:@[
+        @"Force Return True",
+        @"Force Return False",
+        @"Force Return 0",
+        @"Force Return 9999"
+    ]];
+    NSMutableArray<NSNumber *> *callbackRegisters = [NSMutableArray array];
+
+    int parameterCount = 0;
+    Il2CppParamInfo *parameters = il2cpp_get_method_params(info.method, &parameterCount);
+    int registerOffset = info.is_static ? 0 : 1;
+    for (int index = 0; parameters && index < parameterCount; index++) {
+        int registerIndex = index + registerOffset;
+        if (registerIndex >= 8) break;
+        if (parameters[index].type_enum != IL2CPP_TYPE_CLASS &&
+            parameters[index].type_enum != IL2CPP_TYPE_OBJECT) continue;
+
+        NSString *name = parameters[index].param_name &&
+                         strlen(parameters[index].param_name) > 0
+            ? [NSString stringWithUTF8String:parameters[index].param_name]
+            : [NSString stringWithFormat:@"arg%d", index];
+        [buttons addObject:[NSString stringWithFormat:@"Call %@ and Return", name]];
+        [callbackRegisters addObject:@(registerIndex)];
+    }
+    if (parameters) il2cpp_free_param_info(parameters, parameterCount);
+    [buttons addObject:@"Cancel"];
+
+    UIAlertController *alert = MECreateAlert(@"Select Hook",
+                                             [NSString stringWithFormat:@"Choose how to hook %s:", info.name],
+                                             nil,
+                                             nil,
+                                             buttons,
+                                             ^(UIAlertController *controller, NSInteger index) {
+        if (index == (NSInteger)buttons.count - 1) return;
+
+        DLGUnityHookType type;
+        int callbackRegister = 0;
+        if (index == 0) type = DLGUnityHookTypeForceTrue;
+        else if (index == 1) type = DLGUnityHookTypeForceFalse;
+        else if (index == 2) type = DLGUnityHookTypeForceZero;
+        else if (index == 3) type = DLGUnityHookTypeForce9999;
+        else {
+            type = DLGUnityHookTypeCallbackShortCircuit;
+            NSInteger callbackIndex = index - 4;
+            if (callbackIndex < 0 || callbackIndex >= (NSInteger)callbackRegisters.count) return;
+            callbackRegister = callbackRegisters[callbackIndex].intValue;
+        }
+
+        NSString *className = info.class_full_name
+            ? [NSString stringWithUTF8String:info.class_full_name]
+            : [self fullNameForClass:info.klass ?: self.selectedClass];
+        BOOL installed = [[DLGUnityHookManager sharedManager]
+            installHookForMethod:info.method
+                       className:className
+                      methodName:[NSString stringWithUTF8String:info.name]
+                        hookType:type
+              callbackParamIndex:callbackRegister];
+        [self showInfoMessage:installed
+            ? [NSString stringWithFormat:@"Hook installed on %s.", info.name]
+            : @"Failed to install hook."];
+    });
+    MEPresentAlert(alert, self, YES);
+}
+
+- (void)showActiveHooks {
+    NSArray<DLGUnityHook *> *hooks = [[DLGUnityHookManager sharedManager] allHooks];
+    if (hooks.count == 0) {
+        [self showInfoMessage:@"No active hooks."];
+        return;
+    }
+
+    NSMutableString *message = [NSMutableString string];
+    for (DLGUnityHook *hook in hooks) {
+        NSString *type;
+        switch (hook.hookType) {
+            case DLGUnityHookTypeForceTrue: type = @"true"; break;
+            case DLGUnityHookTypeForceFalse: type = @"false"; break;
+            case DLGUnityHookTypeForceZero: type = @"0"; break;
+            case DLGUnityHookTypeForce9999: type = @"9999"; break;
+            case DLGUnityHookTypeCallbackShortCircuit:
+                type = [NSString stringWithFormat:@"callback(x%d)", hook.callbackParamIndex];
+                break;
+        }
+        [message appendFormat:@"• %@ → %@\n", hook.methodName, type];
+    }
+
+    UIAlertController *alert = MECreateAlert([NSString stringWithFormat:@"Active Hooks (%lu)",
+                                              (unsigned long)hooks.count],
+                                             message,
+                                             nil,
+                                             nil,
+                                             @[@"Remove All", @"OK"],
+                                             ^(UIAlertController *controller, NSInteger index) {
+        if (index != 0) return;
+        for (DLGUnityHook *hook in hooks) {
+            [[DLGUnityHookManager sharedManager]
+                removeHookForMethodPointer:hook.methodPointer];
+        }
+        [self showInfoMessage:@"All hooks removed."];
+    });
+    MEPresentAlert(alert, self, YES);
+}
+#endif
+
+- (void)saveShortcutForMethod:(Il2CppMethodInfo)info {
+    int param_count = 0;
+    Il2CppParamInfo *params = il2cpp_get_method_params(info.method, &param_count);
+
+    if (param_count == 0) {
+        if (params) il2cpp_free_param_info(params, param_count);
+        [self promptShortcutTitleForMethod:info paramValues:@[]];
+        return;
+    }
+
+    NSMutableString *message = [NSMutableString stringWithString:@"Enter the argument values to save with this shortcut:\n\n"];
+    NSMutableArray<NSString *> *placeholders = [NSMutableArray array];
+    NSMutableArray *keyboardTypes = [NSMutableArray array];
+
+    for (int i = 0; i < param_count; i++) {
+        NSString *paramName = params[i].param_name && strlen(params[i].param_name) > 0
+            ? [NSString stringWithUTF8String:params[i].param_name]
+            : [NSString stringWithFormat:@"arg%d", i];
+        [message appendFormat:@"%d. %s %@\n", i+1, params[i].type_name, paramName];
+
+        NSString *placeholder = paramName;
+        UIKeyboardType keyboardType = UIKeyboardTypeDefault;
+        switch (params[i].type_enum) {
+            case IL2CPP_TYPE_BOOLEAN:
+                placeholder = [NSString stringWithFormat:@"%@ (true/false)", paramName];
+                break;
+            case IL2CPP_TYPE_I1:
+            case IL2CPP_TYPE_I2:
+            case IL2CPP_TYPE_I4:
+            case IL2CPP_TYPE_I8:
+            case IL2CPP_TYPE_U1:
+            case IL2CPP_TYPE_U2:
+            case IL2CPP_TYPE_U4:
+            case IL2CPP_TYPE_U8:
+                keyboardType = UIKeyboardTypeNumberPad;
+                break;
+            case IL2CPP_TYPE_R4:
+            case IL2CPP_TYPE_R8:
+                keyboardType = UIKeyboardTypeDecimalPad;
+                break;
+            default:
+                keyboardType = UIKeyboardTypeDefault;
+                break;
+        }
+        [placeholders addObject:placeholder];
+        [keyboardTypes addObject:@(keyboardType)];
+    }
+
+    __weak typeof(self) weakSelf = self;
+    UIAlertController *alert = MECreateAlert(@"Shortcut Arguments",
+                                             message,
+                                             placeholders,
+                                             keyboardTypes,
+                                             @[@"Next", @"Cancel"],
+                                             ^(UIAlertController *controller, NSInteger buttonIndex) {
+        if (buttonIndex == 0) {
+            NSMutableArray<NSString *> *values = [NSMutableArray array];
+            for (UITextField *tf in controller.textFields) {
+                [values addObject:tf.text ?: @""];
+            }
+            [weakSelf promptShortcutTitleForMethod:info paramValues:values];
+        }
+        if (params) il2cpp_free_param_info(params, param_count);
+    });
+    MEPresentAlert(alert, self, YES);
+}
+
+- (void)promptShortcutTitleForMethod:(Il2CppMethodInfo)info paramValues:(NSArray<NSString *> *)values {
+    NSString *defaultTitle = [NSString stringWithUTF8String:info.name];
+    NSString *classFullName = [self fullNameForClass:self.selectedClass];
+    BOOL isStatic = info.is_static;
+    int paramCount = info.param_count;
+    NSString *methodName = [NSString stringWithUTF8String:info.name];
+    NSString *signature = info.signature ? [NSString stringWithUTF8String:info.signature] : @"";
+
+    __weak typeof(self) weakSelf = self;
+    UIAlertController *alert = MECreateAlert(@"Shortcut Name",
+                                             @"Name the button that will appear in-game:",
+                                             @[defaultTitle],
+                                             nil,
+                                             @[@"Save", @"Cancel"],
+                                             ^(UIAlertController *controller, NSInteger buttonIndex) {
+        if (buttonIndex == 0) {
+            UITextField *tf = controller.textFields.firstObject;
+            NSString *title = tf.text.length ? tf.text : defaultTitle;
+
+            MEShortcut *sc = [[MEShortcut alloc] init];
+            sc.title = title;
+            sc.classFullName = classFullName;
+            sc.methodName = methodName;
+            sc.paramCount = paramCount;
+            sc.isStatic = isStatic;
+            sc.signature = signature;
+            sc.params = values;
+
+            [[MEStore shared] addShortcut:sc];
+            [weakSelf showInfoMessage:[NSString stringWithFormat:@"Saved \"%@\" to your in-game shortcuts.", title]];
+        }
+    });
+    MEPresentAlert(alert, self, YES);
 }
 
 - (void)showInvokeOptionsForMethod:(Il2CppMethodInfo)info {
-    UNITY_LOG(@"showInvokeOptionsForMethod: %s", info.name);
+    UNITY_LOG(@"show invoke options for method %s", info.name);
 
     int param_count = 0;
     Il2CppParamInfo* params = il2cpp_get_method_params(info.method, &param_count);
 
-    UNITY_LOG(@"showInvokeOptionsForMethod: has %d parameters", param_count);
+    UNITY_LOG(@"invoke options got %d parameters", param_count);
 
     if (param_count == 0) {
         [self invokeMethodWithInfo:info params:NULL paramCount:0 paramInfo:NULL];
@@ -584,25 +970,22 @@ typedef enum {
         [keyboardTypes addObject:@(keyboardType)];
     }
 
-    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-    alert.titleText = @"Invoke Method";
-    alert.messageText = message;
-    alert.alertStyle = DLGUnityHaxAlertStyleInput;
-    alert.inputPlaceholders = placeholders;
-    alert.inputKeyboardTypes = keyboardTypes;
-    alert.buttonTitles = @[@"Invoke", @"Cancel"];
-    alert.buttonHandler = ^(NSInteger buttonIndex) {
+    UIAlertController *alert = MECreateAlert(@"Invoke Method",
+                                             message,
+                                             placeholders,
+                                             keyboardTypes,
+                                             @[@"Invoke", @"Cancel"],
+                                             ^(UIAlertController *controller, NSInteger buttonIndex) {
         if (buttonIndex == 0) {
-            [self invokeMethodWithInfo:info params:alert.textFields paramCount:param_count paramInfo:params];
+            [self invokeMethodWithInfo:info params:controller.textFields paramCount:param_count paramInfo:params];
         }
         if (params) il2cpp_free_param_info(params, param_count);
-    };
-
-    [alert showInView:self animated:YES];
+    });
+    MEPresentAlert(alert, self, YES);
 }
 
 - (void)invokeMethodWithInfo:(Il2CppMethodInfo)info params:(NSArray<UITextField *> *)textFields paramCount:(int)paramCount paramInfo:(Il2CppParamInfo *)paramInfo {
-    UNITY_LOG(@"invokeMethodWithInfo: %s with %d params", info.name, paramCount);
+    UNITY_LOG(@"invoke method %s with %d params", info.name, paramCount);
 
     void** params = NULL;
     void* param_values[paramCount];
@@ -610,10 +993,9 @@ typedef enum {
     if (paramCount > 0) {
         params = param_values;
 
-        // parse parameters
         for (int i = 0; i < paramCount; i++) {
             NSString *input = textFields[i].text;
-            UNITY_LOG(@"Parameter %d: type=%d, value='%s'", i, paramInfo[i].type_enum, [input UTF8String]);
+    UNITY_LOG(@"parameter %d: type=%d, value='%s'", i, paramInfo[i].type_enum, [input UTF8String]);
 
             switch (paramInfo[i].type_enum) {
                 case IL2CPP_TYPE_BOOLEAN: {
@@ -693,61 +1075,84 @@ typedef enum {
                     break;
                 }
                 default:
-                    UNITY_LOG(@"Unsupported parameter type: %d", paramInfo[i].type_enum);
+                    UNITY_LOG(@"parameter type not support: %d", paramInfo[i].type_enum);
                     params[i] = NULL;
                     break;
             }
         }
     }
 
-    // get target object
     void* obj = NULL;
     if (!info.is_static) {
         if (self.selectedInstance) {
             obj = self.selectedInstance;
         } else {
-            DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-            alert.titleText = @"Error";
-            alert.messageText = @"Please run this on a live instance.";
-            alert.buttonTitles = @[@"OK"];
-            [alert showInView:self animated:YES];
+            UIAlertController *alert = MECreateAlert(@"Error",
+                                                     @"Please run this on a live instance.",
+                                                     nil,
+                                                     nil,
+                                                     @[@"OK"],
+                                                     nil);
+            MEPresentAlert(alert, self, YES);
             return;
         }
     }
 
-    // invoke method and show result
     char* result = il2cpp_invoke_method(info.method, obj, params);
     NSString *resultStr = result ? [NSString stringWithUTF8String:result] : @"(null)";
 
-    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-    alert.titleText = @"Method Result";
-    alert.messageText = [NSString stringWithFormat:@"Method: %s\n\nResult: %@", info.name, resultStr];
-    alert.buttonTitles = @[@"OK"];
-
-    [alert showInView:self animated:YES];
+    UIAlertController *alert = MECreateAlert(@"Method Result",
+                                             [NSString stringWithFormat:@"Method: %s\n\nResult: %@", info.name, resultStr],
+                                             nil,
+                                             nil,
+                                             @[@"OK"],
+                                             nil);
+    MEPresentAlert(alert, self, YES);
 
     if (result) free(result);
 }
 
 - (void)showClassOptionsForClass:(Il2CppClass *)klass className:(NSString *)className {
-    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-    alert.titleText = @"Class Options";
-    alert.messageText = [NSString stringWithFormat:@"What would you like to do with %@?", className];
-    alert.buttonTitles = @[@"View Methods", @"View Fields", @"Find Instances", @"Cancel"];
-    alert.buttonHandler = ^(NSInteger buttonIndex) {
+    BOOL favorited = [[MEStore shared] isClassFavorited:className];
+
+    UIAlertController *alert = MECreateAlert(@"Class Options",
+                                             [NSString stringWithFormat:@"What would you like to do with %@?", className],
+                                             nil,
+                                             nil,
+                                             @[@"View Methods", @"View Fields", @"Find Instances",
+                                               favorited ? @"★ Remove Favorite" : @"☆ Add Favorite", @"Cancel"],
+                                             ^(UIAlertController *controller, NSInteger buttonIndex) {
         if (buttonIndex == 0) {
             [self showMethodsForClass:klass className:className];
         } else if (buttonIndex == 1) {
             [self showFieldsForClass:klass className:className];
         } else if (buttonIndex == 2) {
             [self showInstanceOptionsForClass:klass className:className];
+        } else if (buttonIndex == 3) {
+            [self toggleFavoriteClass:klass fullName:className];
         }
-    };
+    });
+    MEPresentAlert(alert, self, YES);
+}
 
-    [alert showInView:self animated:YES];
+- (void)toggleFavoriteClass:(Il2CppClass *)klass fullName:(NSString *)fullName {
+    MEStore *store = [MEStore shared];
+    if ([store isClassFavorited:fullName]) {
+        [store removeFavoriteClass:fullName];
+    } else {
+        const char *cname = il2cpp_class_get_name(klass);
+        const char *cns = il2cpp_class_get_namespace(klass);
+        NSString *name = cname ? [NSString stringWithUTF8String:cname] : fullName;
+        NSString *ns = cns ? [NSString stringWithUTF8String:cns] : @"";
+        [store addFavoriteClassWithFullName:fullName name:name namespace:ns];
+    }
+    if (self.viewMode == UNITY_VIEW_MODE_CLASSES) {
+        [self reloadClassList];
+    }
 }
 
 - (void)showFieldsForClass:(Il2CppClass *)klass className:(NSString *)className {
+    self.globalMethodSearchGeneration++;
     self.selectedClass = klass;
     self.viewMode = UNITY_VIEW_MODE_FIELDS;
 
@@ -766,7 +1171,11 @@ typedef enum {
             self.titleLabel.text = className;
             self.btnBack.hidden = NO;
             self.instanceModeControl.hidden = YES;
+            self.viewModeControl.hidden = YES;
             self.searchBar.placeholder = @"Search fields...";
+
+            [MEStore shared].lastClassFullName = className;
+            [MEStore shared].lastSubPage = 1;
 
             [self.loadingIndicator stopAnimating];
             self.tableView.hidden = NO;
@@ -778,31 +1187,30 @@ typedef enum {
 - (void)showInstanceOptionsForClass:(Il2CppClass *)klass className:(NSString *)className {
     self.selectedClass = klass;
 
-    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-    alert.titleText = @"Find Instances";
-    alert.messageText = @"How would you like to get instances of this class?";
-    alert.buttonTitles = @[@"Manual Entry", @"Scan Memory", @"Cancel"];
-    alert.buttonHandler = ^(NSInteger buttonIndex) {
+    UIAlertController *alert = MECreateAlert(@"Find Instances",
+                                             @"How would you like to get instances of this class?",
+                                             nil,
+                                             nil,
+                                             @[@"Manual Entry", @"Scan Memory", @"Cancel"],
+                                             ^(UIAlertController *controller, NSInteger buttonIndex) {
         if (buttonIndex == 0) {
             [self showManualInstanceInput:klass className:className];
         } else if (buttonIndex == 1) {
             [self scanForInstances:klass className:className];
         }
-    };
-
-    [alert showInView:self animated:YES];
+    });
+    MEPresentAlert(alert, self, YES);
 }
 
 - (void)showManualInstanceInput:(Il2CppClass *)klass className:(NSString *)className {
-    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-    alert.titleText = @"Manual Instance Entry";
-    alert.messageText = @"Enter the object pointer address (eg, 0x1234abcd)";
-    alert.alertStyle = DLGUnityHaxAlertStyleInput;
-    alert.inputPlaceholders = @[@"0x"];
-    alert.buttonTitles = @[@"Open", @"Cancel"];
-    alert.buttonHandler = ^(NSInteger buttonIndex) {
+    UIAlertController *alert = MECreateAlert(@"Manual Instance Entry",
+                                             @"Enter the object pointer address (eg, 0x1234abcd)",
+                                             @[@"0x"],
+                                             nil,
+                                             @[@"Open", @"Cancel"],
+                                             ^(UIAlertController *controller, NSInteger buttonIndex) {
         if (buttonIndex == 0) {
-            UITextField *textField = alert.textFields.firstObject;
+            UITextField *textField = controller.textFields.firstObject;
             NSString *input = textField.text;
 
             unsigned long long address = 0;
@@ -814,9 +1222,8 @@ typedef enum {
                 [self showErrorMessage:@"Invalid address format"];
             }
         }
-    };
-
-    [alert showInView:self animated:YES];
+    });
+    MEPresentAlert(alert, self, YES);
 }
 
 - (void)scanForInstances:(Il2CppClass *)klass className:(NSString *)className {
@@ -837,6 +1244,7 @@ typedef enum {
 
             self.titleLabel.text = [NSString stringWithFormat:@"%@ Instances", className];
             self.btnBack.hidden = NO;
+            self.viewModeControl.hidden = YES;
 
             [self.loadingIndicator stopAnimating];
             self.tableView.hidden = NO;
@@ -877,7 +1285,8 @@ typedef enum {
             self.titleLabel.text = [NSString stringWithFormat:@"Instance 0x%lx", (unsigned long)instance];
             self.btnBack.hidden = NO;
             self.instanceModeControl.hidden = NO;
-            self.instanceModeControl.selectedSegmentIndex = 0; // fields tab
+            self.viewModeControl.hidden = YES;
+            self.instanceModeControl.selectedSegmentIndex = 0;
 
             [self.loadingIndicator stopAnimating];
             self.tableView.hidden = NO;
@@ -905,7 +1314,8 @@ typedef enum {
             self.titleLabel.text = [NSString stringWithFormat:@"Instance 0x%lx", (unsigned long)instance];
             self.btnBack.hidden = NO;
             self.instanceModeControl.hidden = NO;
-            self.instanceModeControl.selectedSegmentIndex = 1; // methods tab
+            self.viewModeControl.hidden = YES;
+            self.instanceModeControl.selectedSegmentIndex = 1;
             self.searchBar.placeholder = @"Search methods...";
 
             [self.loadingIndicator stopAnimating];
@@ -926,30 +1336,23 @@ typedef enum {
                          info.is_static ? "Static" : "Instance",
                          valueString];
 
-    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-    alert.titleText = @"Field Details";
-    alert.messageText = message;
-
+    NSArray<NSString *> *buttonTitles;
+    MEAlertHandler handler = nil;
     if (il2cpp_can_edit_field_type(info.type_enum)) {
-        alert.buttonTitles = @[@"Edit Value", @"Cancel"];
-        alert.buttonHandler = ^(NSInteger buttonIndex) {
+        buttonTitles = @[@"Edit Value", @"Cancel"];
+        handler = ^(UIAlertController *controller, NSInteger buttonIndex) {
             if (buttonIndex == 0) {
                 [self showEditFieldDialog:info];
             }
         };
     } else {
-        alert.buttonTitles = @[@"OK"];
+        buttonTitles = @[@"OK"];
     }
-
-    [alert showInView:self animated:YES];
+    UIAlertController *alert = MECreateAlert(@"Field Details", message, nil, nil, buttonTitles, handler);
+    MEPresentAlert(alert, self, YES);
 }
 
 - (void)showEditFieldDialog:(Il2CppFieldInfo)info {
-    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-    alert.titleText = @"Edit Field Value";
-    alert.messageText = [NSString stringWithFormat:@"Enter new value for %s:", info.name];
-    alert.alertStyle = DLGUnityHaxAlertStyleInput;
-
     UIKeyboardType keyboardType = UIKeyboardTypeDefault;
     NSString *placeholder = @"value";
 
@@ -975,12 +1378,14 @@ typedef enum {
             break;
     }
 
-    alert.inputPlaceholders = @[placeholder];
-    alert.inputKeyboardTypes = @[@(keyboardType)];
-    alert.buttonTitles = @[@"Set Value", @"Cancel"];
-    alert.buttonHandler = ^(NSInteger buttonIndex) {
+    UIAlertController *alert = MECreateAlert(@"Edit Field Value",
+                                             [NSString stringWithFormat:@"Enter new value for %s:", info.name],
+                                             @[placeholder],
+                                             @[@(keyboardType)],
+                                             @[@"Set Value", @"Cancel"],
+                                             ^(UIAlertController *controller, NSInteger buttonIndex) {
         if (buttonIndex == 0) {
-            UITextField *textField = alert.textFields.firstObject;
+            UITextField *textField = controller.textFields.firstObject;
             bool success = il2cpp_set_field_value_from_string(self.selectedInstance, info.field, self.selectedClass, [textField.text UTF8String], info.type_enum);
             if (success) {
                 [self showInfoMessage:@"Value updated successfully!"];
@@ -989,28 +1394,44 @@ typedef enum {
                 [self showErrorMessage:@"Failed to set value"];
             }
         }
-    };
-
-    [alert showInView:self animated:YES];
+    });
+    MEPresentAlert(alert, self, YES);
 }
 
 - (void)showInfoMessage:(NSString *)message {
-    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-    alert.titleText = @"Info";
-    alert.messageText = message;
-    alert.buttonTitles = @[@"OK"];
-    [alert showInView:self animated:YES];
+    UIAlertController *alert = MECreateAlert(@"Info", message, nil, nil, @[@"OK"], nil);
+    MEPresentAlert(alert, self, YES);
 }
 
 - (void)showErrorMessage:(NSString *)message {
-    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-    alert.titleText = @"Error";
-    alert.messageText = message;
-    alert.buttonTitles = @[@"OK"];
-    [alert showInView:self animated:YES];
+    UIAlertController *alert = MECreateAlert(@"Error", message, nil, nil, @[@"OK"], nil);
+    MEPresentAlert(alert, self, YES);
 }
 
-#pragma mark - Show/Hide
+
+- (void)restoreLastState {
+    MEStore *store = [MEStore shared];
+
+    NSString *lastSearch = store.lastSearchText;
+    if (lastSearch.length > 0) {
+        self.searchBar.text = lastSearch;
+    }
+    [self reloadClassList];
+    self.tableView.hidden = NO;
+
+    NSString *lastClass = store.lastClassFullName;
+    if (lastClass.length > 0) {
+        Il2CppClass *klass = il2cpp_find_class_by_full_name([lastClass UTF8String]);
+        if (klass) {
+            if (store.lastSubPage == 1) {
+                [self showFieldsForClass:klass className:lastClass];
+            } else {
+                [self showMethodsForClass:klass className:lastClass];
+            }
+        }
+    }
+}
+
 
 - (void)showInView:(UIView *)view animated:(BOOL)animated {
     if (!view) {
@@ -1025,7 +1446,6 @@ typedef enum {
         [self.bottomAnchor constraintEqualToAnchor:view.bottomAnchor]
     ]];
 
-    // init IL2CPP
     [self.loadingIndicator startAnimating];
     self.tableView.hidden = YES;
 
@@ -1034,33 +1454,33 @@ typedef enum {
             bool success = il2cpp_helper_init();
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (success) {
-                    self.classResults = il2cpp_enumerate_classes();
-                    [self.tableView reloadData];
-                    self.tableView.hidden = NO;
+                    [self restoreLastState];
                 } else {
-                    DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-                    alert.titleText = @"Error";
-                    alert.messageText = @"Failed to initialize IL2CPP. Make sure the target app is using IL2CPP.";
-                    alert.buttonTitles = @[@"OK"];
-                    alert.buttonHandler = ^(NSInteger buttonIndex) {
+                    UIAlertController *alert = MECreateAlert(@"Error",
+                                                             @"Failed to initialize IL2CPP. Make sure the target app is using IL2CPP.",
+                                                             nil,
+                                                             nil,
+                                                             @[@"OK"],
+                                                             ^(UIAlertController *controller, NSInteger buttonIndex) {
                         [self hideAnimated:YES];
-                    };
-                    [alert showInView:self animated:YES];
+                    });
+                    MEPresentAlert(alert, self, YES);
                 }
                 [self.loadingIndicator stopAnimating];
             });
         } @catch (NSException *exception) {
-            UNITY_LOG(@"Exception in init thread: %@", exception);
+            UNITY_LOG(@"init thread got exception: %@", exception);
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self.loadingIndicator stopAnimating];
-                DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
-                alert.titleText = @"Error";
-                alert.messageText = [NSString stringWithFormat:@"Exception: %@", exception.reason];
-                alert.buttonTitles = @[@"OK"];
-                alert.buttonHandler = ^(NSInteger buttonIndex) {
+                UIAlertController *alert = MECreateAlert(@"Error",
+                                                         [NSString stringWithFormat:@"Exception: %@", exception.reason],
+                                                         nil,
+                                                         nil,
+                                                         @[@"OK"],
+                                                         ^(UIAlertController *controller, NSInteger buttonIndex) {
                     [self hideAnimated:YES];
-                };
-                [alert showInView:self animated:YES];
+                });
+                MEPresentAlert(alert, self, YES);
             });
         }
     });

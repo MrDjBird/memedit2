@@ -7,6 +7,10 @@
 @optional
 - (void)DLGMemUIMenuDidSelectMemoryEditor:(DLGMemUIMenu *)menu;
 - (void)DLGMemUIMenuDidSelectUnityHax:(DLGMemUIMenu *)menu;
+#if !JAILED
+- (void)DLGMemUIMenuDidSelectUnityHooks:(DLGMemUIMenu *)menu;
+#endif
+- (void)DLGMemUIMenuDidSelectSpeedHack:(DLGMemUIMenu *)menu;
 - (void)DLGMemUIMenuDidCancel:(DLGMemUIMenu *)menu;
 
 @end

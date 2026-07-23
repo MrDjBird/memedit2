@@ -1,0 +1,9 @@
+Package: dev.mineek.memedit
+Name: memedit
+Version: 0.0.1
+Architecture: iphoneos-arm
+Description: A mobile iOS cheat engine
+Maintainer: Mineek
+Author: Mineek
+Section: Tweaks
+Depends: mobilesubstrate, preferenceloader, com.opa334.altlist

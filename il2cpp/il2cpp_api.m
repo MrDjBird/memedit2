@@ -70,21 +70,20 @@ static void* il2cpp_handle = NULL;
 #define RESOLVE_FUNC(name) \
     name = (name##_t)dlsym(il2cpp_handle, #name); \
     if (!name) { \
-        IL2CPP_LOG(@"Failed to get function %s: %s", #name, dlerror()); \
+        IL2CPP_LOG(@"function %s no load: %s", #name, dlerror()); \
     } else { \
         IL2CPP_LOG(@"%s @ %p", #name, name); \
     }
 
 bool il2cpp_api_init(void) {
-    IL2CPP_LOG(@"Init il2cpp!");
+    IL2CPP_LOG(@"init il2cpp");
 
     if (api_initialized) {
-        IL2CPP_LOG(@"il2cpp already inited!");
+        IL2CPP_LOG(@"il2cpp already init");
         return true;
     }
 
-    // is this even a unity il2cpp game?
-    IL2CPP_LOG(@"Verifying if this is a unity il2cpp game");
+    IL2CPP_LOG(@"check game is unity il2cpp");
     uint32_t image_count = _dyld_image_count();
     bool found_unity = false;
 
@@ -94,7 +93,7 @@ bool il2cpp_api_init(void) {
             if (strstr(image_name, "UnityFramework") ||
                 strstr(image_name, "libil2cpp") ||
                 strstr(image_name, "libunity")) {
-                IL2CPP_LOG(@"Yes, found Unity library: %s", image_name);
+                IL2CPP_LOG(@"unity library found: %s", image_name);
                 found_unity = true;
                 break;
             }
@@ -102,11 +101,10 @@ bool il2cpp_api_init(void) {
     }
 
     if (!found_unity) {
-        IL2CPP_LOG(@"This may not be a unity game");
+        IL2CPP_LOG(@"maybe game is not unity");
         return false;
     }
 
-    // load unityframework dylib so we can resolve symbols
     const char* unity_framework_path = NULL;
     for (uint32_t i = 0; i < image_count; i++) {
         const char* image_name = _dyld_get_image_name(i);
@@ -117,21 +115,20 @@ bool il2cpp_api_init(void) {
     }
 
     if (unity_framework_path) {
-        IL2CPP_LOG(@"Trying to load UnityFramework with path %s", unity_framework_path);
+        IL2CPP_LOG(@"try load unityframework from %s", unity_framework_path);
         il2cpp_handle = dlopen(unity_framework_path, RTLD_LAZY | RTLD_NOLOAD);
         if (il2cpp_handle) {
-            IL2CPP_LOG(@"success!");
+            IL2CPP_LOG(@"load ok");
         } else {
             il2cpp_handle = dlopen(unity_framework_path, RTLD_LAZY);
             if (il2cpp_handle) {
-                IL2CPP_LOG(@"success on second try!");
+                IL2CPP_LOG(@"second try load ok");
             } else {
-                IL2CPP_LOG(@"failed to load UnityFramework: %s", dlerror());
+                IL2CPP_LOG(@"unityframework no load: %s", dlerror());
             }
         }
     }
 
-    // fallback
     if (!il2cpp_handle) {
         const char* lib_names[] = {
             "UnityFramework",
@@ -143,21 +140,20 @@ bool il2cpp_api_init(void) {
         for (int i = 0; lib_names[i] != NULL; i++) {
             il2cpp_handle = dlopen(lib_names[i], RTLD_LAZY);
             if (il2cpp_handle) {
-                IL2CPP_LOG(@"success on %s", lib_names[i]);
+                IL2CPP_LOG(@"load ok from %s", lib_names[i]);
                 break;
             } else {
-                IL2CPP_LOG(@"Failed to load %s: %s", lib_names[i], dlerror());
+                IL2CPP_LOG(@"%s no load: %s", lib_names[i], dlerror());
             }
         }
     }
 
     if (!il2cpp_handle) {
-        IL2CPP_LOG(@"Didn't find explicit il2cpp handle");
+        IL2CPP_LOG(@"explicit il2cpp handle not found");
         il2cpp_handle = RTLD_DEFAULT;
     }
 
-    // resolve functions
-    IL2CPP_LOG(@"Getting Unity functions!");
+    IL2CPP_LOG(@"get unity functions");
     RESOLVE_FUNC(il2cpp_domain_get);
     RESOLVE_FUNC(il2cpp_domain_get_assemblies);
 
@@ -213,8 +209,7 @@ bool il2cpp_api_init(void) {
     RESOLVE_FUNC(il2cpp_alloc);
     RESOLVE_FUNC(il2cpp_free);
 
-    // verify minimum required functions are resolved
-    IL2CPP_LOG(@"Checking minimum required functions...");
+    IL2CPP_LOG(@"check required functions");
     IL2CPP_LOG(@"  il2cpp_domain_get: %p", il2cpp_domain_get);
     IL2CPP_LOG(@"  il2cpp_domain_get_assemblies: %p", il2cpp_domain_get_assemblies);
     IL2CPP_LOG(@"  il2cpp_assembly_get_image: %p", il2cpp_assembly_get_image);
@@ -223,11 +218,11 @@ bool il2cpp_api_init(void) {
     if (il2cpp_domain_get && il2cpp_domain_get_assemblies &&
         il2cpp_assembly_get_image && il2cpp_image_get_name) {
         api_initialized = true;
-        IL2CPP_LOG(@"il2cpp api initialized successfully!");
+        IL2CPP_LOG(@"il2cpp api inited ok");
         return true;
     }
 
-    IL2CPP_LOG(@"Failed to initialize il2cpp api ( did not found all required symbols )");
+    IL2CPP_LOG(@"il2cpp api not inited, because required symbols missing");
     return false;
 }
 

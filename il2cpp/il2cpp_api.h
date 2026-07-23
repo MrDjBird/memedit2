@@ -37,14 +37,12 @@ typedef void (*il2cpp_field_static_get_value_t)(FieldInfo* field, void* value);
 typedef void (*il2cpp_field_get_value_t)(Il2CppObject* obj, FieldInfo* field, void* value);
 typedef void (*il2cpp_runtime_class_init_t)(Il2CppClass* klass);
 
-// runtime funcs
 typedef Il2CppObject* (*il2cpp_runtime_invoke_t)(const MethodInfo* method, void* obj, void** params, Il2CppObject** exc);
 typedef Il2CppObject* (*il2cpp_object_new_t)(Il2CppClass* klass);
 typedef Il2CppString* (*il2cpp_string_new_t)(const char* str);
 typedef const char* (*il2cpp_string_chars_t)(Il2CppString* str);
 typedef Il2CppObject* (*il2cpp_value_box_t)(Il2CppClass* klass, void* data);
 
-// globals
 extern il2cpp_domain_get_t il2cpp_domain_get;
 extern il2cpp_domain_get_assemblies_t il2cpp_domain_get_assemblies;
 
@@ -95,12 +93,10 @@ typedef void (*il2cpp_liveness_callback_t)(Il2CppObject** objects, int size, voi
 typedef void (*il2cpp_world_callback_t)(void);
 typedef void* (*il2cpp_realloc_callback_t)(void* handle, size_t size, void* userdata);
 
-// Unity < 2021.2.0
 typedef void* (*il2cpp_unity_liveness_calculation_begin_t)(Il2CppClass* klass, int max_count, il2cpp_liveness_callback_t callback, void* userdata, il2cpp_world_callback_t onStartWorld, il2cpp_world_callback_t onStopWorld);
 typedef void (*il2cpp_unity_liveness_calculation_from_statics_t)(void* state);
 typedef void (*il2cpp_unity_liveness_calculation_end_t)(void* state);
 
-// Unity >= 2021.2.0
 typedef void* (*il2cpp_unity_liveness_allocate_struct_t)(Il2CppClass* klass, int max_count, il2cpp_liveness_callback_t callback, void* userdata, il2cpp_realloc_callback_t reallocCallback);
 typedef void (*il2cpp_unity_liveness_finalize_t)(void* state);
 typedef void (*il2cpp_unity_liveness_free_struct_t)(void* state);
@@ -125,4 +121,4 @@ extern il2cpp_free_t il2cpp_free;
 bool il2cpp_api_init(void);
 bool il2cpp_api_is_available(void);
 
-#endif /* il2cpp_api_h */
+#endif

@@ -1,10 +1,3 @@
-//
-//  search_result.c
-//  mem
-//
-//  Created by Liu Junqi on 3/27/18.
-//  Copyright © 2018 DeviLeo. All rights reserved.
-//
 
 #include "search_result.h"
 
@@ -140,13 +133,13 @@ int compare_value(void *value1, int size1, void *value2, int size2, int type) {
 
 void print_chain(search_result_chain_t chain) {
     printf("%llX", chain->result->address);
-    
+
     printf(" %c%c%c ",
            (chain->result->protection & VM_PROT_READ) ? 'r' : '-',
            (chain->result->protection & VM_PROT_WRITE) ? 'w' : '-',
            (chain->result->protection & VM_PROT_EXECUTE) ? 'x' : '-'
            );
-    
+
     int type = chain->result->type;
     if (type == SearchResultValueTypeUInt8) {
         uint8_t v = *(uint8_t *)(chain->result->value);

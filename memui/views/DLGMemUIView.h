@@ -1,10 +1,3 @@
-//
-//  DLGMemUIView.h
-//  memui
-//
-//  Created by Liu Junqi on 11/11/2016.
-//  Copyright © 2016 Liu Junqi. All rights reserved.
-//
 
 #import <UIKit/UIKit.h>
 #import "DLGMemUIViewDelegate.h"
@@ -12,9 +5,7 @@
 
 #define DLG_DEBUG_CONSOLE_VIEW_SIZE 64
 
-// #define DLG_DEBUG_CONSOLE_VIEW_MIN_ALPHA 0.5f
 #define DLG_DEBUG_CONSOLE_VIEW_MIN_ALPHA 1.0f
-// #define DLG_DEBUG_CONSOLE_VIEW_MAX_ALPHA 0.8f
 #define DLG_DEBUG_CONSOLE_VIEW_MAX_ALPHA 1.0f
 
 @interface DLGMemUIView : UIView

@@ -1,10 +1,3 @@
-//
-//  DLGMemUIViewDelegate.h
-//  memui
-//
-//  Created by Liu Junqi on 4/23/18.
-//  Copyright © 2018 DeviLeo. All rights reserved.
-//
 
 #import <Foundation/Foundation.h>
 
@@ -24,11 +17,11 @@ typedef enum : NSUInteger {
 } DLGMemValueType;
 
 typedef enum : NSUInteger {
-    DLGMemComparisonLT, // <
-    DLGMemComparisonLE, // <=
-    DLGMemComparisonEQ, // =
-    DLGMemComparisonGE, // >=
-    DLGMemComparisonGT, // >
+    DLGMemComparisonLT,
+    DLGMemComparisonLE,
+    DLGMemComparisonEQ,
+    DLGMemComparisonGE,
+    DLGMemComparisonGT,
 } DLGMemComparison;
 
 @protocol DLGMemUIViewDelegate <NSObject>

@@ -1,10 +1,8 @@
 #import <Foundation/Foundation.h>
 
 #ifdef RELEASE_BUILD
-#define RLog(...) ((void)0)
-#define RLogv(format, args) ((void)0)
-#undef NSLog
-#define NSLog(...) ((void)0)
+#define RLog(...) NSLog(__VA_ARGS__)
+#define RLogv(format, args) NSLogv(format, args)
 #else
 #import <netinet/in.h>
 #import <sys/socket.h>
@@ -12,7 +10,7 @@
 #import <arpa/inet.h>
 
 #ifndef REMOTE_LOG_IP
-#error Please define the remote log server IP by defining REMOTE_LOG_IP.
+#error remote log server ip is not set
 #endif
 #define REMOTE_LOG_PORT 1337
 
@@ -23,7 +21,7 @@ static void RLogv(NSString *format, va_list args)
     int sockfd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sockfd <= 0)
     {
-        NSLog(@"remote-log Error: Could not open socket");
+        NSLog(@"remote log socket no open");
         return;
     }
 
@@ -36,7 +34,7 @@ static void RLogv(NSString *format, va_list args)
     int bytes = sendto(sockfd, request, strlen(request), 0, (struct sockaddr *)&dest, sizeof dest);
     if (bytes < 0)
     {
-        NSLog(@"remote-log Error: Could not send message");
+        NSLog(@"remote log message no send");
         close(sockfd);
         return;
     }

@@ -69,4 +69,4 @@ typedef enum {
     IL2CPP_TYPE_ENUM       = 0x55
 } Il2CppTypeEnum;
 
-#endif /* il2cpp_types_h */
+#endif

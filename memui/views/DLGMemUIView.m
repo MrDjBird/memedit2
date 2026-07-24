@@ -6,7 +6,7 @@
 #if !JAILED
 #import "DLGUnityHooksView.h"
 #endif
-#import "MEAlert.h"
+#import "DLGUnityHaxAlert.h"
 #import "MESpeedHackPanel.h"
 #import "../RemoteLog.h"
 
@@ -1220,6 +1220,7 @@ static UIWindow *activeApplicationWindow(void)
         if (!self.editAllMode) {
             self.editAllMode = YES;
         }
+        [self.btnEditAll setTitle:@"Confirm Edit" forState:UIControlStateNormal];
         if (!self.selectedAddresses) self.selectedAddresses = [NSMutableSet set];
         [self.selectedAddresses removeAllObjects];
         for (NSInteger i = 0; i < self.chainCount; ++i) {
@@ -1244,18 +1245,21 @@ static UIWindow *activeApplicationWindow(void)
         }
 
         __weak typeof(self) weakSelf = self;
+        NSArray<NSString *> *addresses = self.selectedAddresses.allObjects;
 
-        UIAlertController *alert = MECreateAlert(@"Edit All",
-                                                 @"Enter new value for selected addresses:",
-                                                 @[@"New value"],
-                                                 nil,
-                                                 @[@"OK", @"Cancel"],
-                                                 ^(UIAlertController *controller, NSInteger buttonIndex) {
+        DLGUnityHaxAlert *alert = [[DLGUnityHaxAlert alloc] init];
+        alert.titleText = @"Edit All";
+        alert.messageText = @"Enter new value for selected addresses:";
+        alert.alertStyle = DLGUnityHaxAlertStyleInput;
+        alert.inputPlaceholders = @[@"New value"];
+        alert.buttonTitles = @[@"OK", @"Cancel"];
+
+        __weak DLGUnityHaxAlert *weakAlert = alert;
+        alert.buttonHandler = ^(NSInteger buttonIndex) {
             if (buttonIndex == 0) {
-                UITextField *textField = controller.textFields.firstObject;
-                NSString *value = textField.text;
+                NSString *value = weakAlert.textFields.firstObject.text;
                 if (value.length > 0) {
-                    for (NSString *address in weakSelf.selectedAddresses) {
+                    for (NSString *address in addresses) {
                         if ([weakSelf.delegate respondsToSelector:@selector(DLGMemUIModifyValue:address:type:)]) {
                             DLGMemValueType type = [weakSelf currentValueType];
                             [weakSelf.delegate DLGMemUIModifyValue:value address:address type:type];
@@ -1264,12 +1268,12 @@ static UIWindow *activeApplicationWindow(void)
                 }
             }
             [weakSelf exitEditAllMode];
-        });
+        };
 
         UIView *targetView = [self presentationView];
 
         if (targetView) {
-            MEPresentAlert(alert, targetView, YES);
+            [alert showInView:targetView animated:YES];
         }
     }
 }

@@ -26,7 +26,7 @@ ifdef MEMEDIT_RELEASE_BUILD
 	FINALPACKAGE = 1
 	DEBUG = 0
 else
-	TBD_CFLAGS += -DREMOTE_LOG_IP='"192.168.3.3"'
+	TBD_CFLAGS += -DREMOTE_LOG_IP='"192.168.3.101"'
 endif
 
 $(info Building in $(if $(MEMEDIT_RELEASE_BUILD),Release,Debug) mode ($(if $(filter 1 yes true,$(JAILED)),jailed dylib,tweak package)))
@@ -49,3 +49,23 @@ ifeq ($(filter 1 yes true,$(JAILED)),)
 	SUBPROJECTS += memeditPrefs
 endif
 include $(THEOS_MAKE_PATH)/aggregate.mk
+
+TARGET_TEST_APP = /Users/mineek/Library/Containers/io.playcover.PlayCover/Applications/com.amanotes.bh.app/TilesHop
+TARGET_TEST_APP_ROOT = $(shell dirname $(TARGET_TEST_APP))
+
+testinjectprep: insert_dylib
+	./tools/insert_dylib "@executable_path/memedit.dylib" $(TARGET_TEST_APP) --inplace
+	ldid -e $(TARGET_TEST_APP) > entitlements.xml
+	codesign -f -s - --entitlements entitlements.xml $(TARGET_TEST_APP)
+	rm entitlements.xml
+
+testinject: memedit.dylib
+	cp ./.theos/obj/memedit.dylib $(TARGET_TEST_APP_ROOT)/memedit.dylib
+	vtool -set-build-version 6 15 15 -replace -output $(TARGET_TEST_APP_ROOT)/memedit.dylib $(TARGET_TEST_APP_ROOT)/memedit.dylib
+	codesign -f -s - $(TARGET_TEST_APP_ROOT)/memedit.dylib
+
+insert_dylib:
+	clang -o tools/insert_dylib tools/insert_dylib.c
+
+clean::
+	rm -f tools/insert_dylib

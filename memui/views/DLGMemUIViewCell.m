@@ -6,7 +6,6 @@
 @property (nonatomic) UILabel *lblAddress;
 @property (nonatomic) UILabel *lblValue;
 @property (nonatomic) UITextField *tfValue;
-@property (nonatomic) UIButton *btnMod;
 @property (nonatomic) UIButton *btnViewMemory;
 @property (nonatomic) UIButton *checkbox;
 
@@ -74,9 +73,8 @@
 
     [self initAddressLabel];
     [self initValueLabel];
-    [self initValueInput];
     [self initViewMemoryButton];
-    [self initModButton];
+    [self initValueInput];
     [self initCheckbox];
 
     UIView *hoverView = [[UIView alloc] init];
@@ -123,6 +121,10 @@
     NSArray *cv = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|[lbl]|" options:0 metrics:nil views:views];
     [self.contentView addConstraints:cv];
 
+    lbl.userInteractionEnabled = YES;
+    [lbl addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self
+                                                                      action:@selector(onValueTapped:)]];
+
     self.lblValue = lbl;
 }
 
@@ -143,27 +145,6 @@
     self.btnViewMemory = btn;
 }
 
-- (void)initModButton {
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    btn.translatesAutoresizingMaskIntoConstraints = NO;
-    [btn setTitle:@"M" forState:UIControlStateNormal];
-    [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    btn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
-    btn.layer.cornerRadius = 6;
-
-    [self.contentView addSubview:btn];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [btn.leadingAnchor constraintEqualToAnchor:self.tfValue.trailingAnchor constant:8],
-        [btn.trailingAnchor constraintEqualToAnchor:self.btnViewMemory.leadingAnchor constant:-8],
-        [btn.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
-        [btn.heightAnchor constraintEqualToConstant:32]
-    ]];
-
-    [btn addTarget:self action:@selector(onModButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
-    self.btnMod = btn;
-}
-
 - (void)initValueInput {
     UITextField *tf = [[UITextField alloc] init];
     tf.translatesAutoresizingMaskIntoConstraints = NO;
@@ -181,15 +162,28 @@
     UIView *paddingView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 8, 20)];
     tf.leftView = paddingView;
     tf.leftViewMode = UITextFieldViewModeAlways;
+    tf.returnKeyType = UIReturnKeyDone;
+
+    UIToolbar *toolbar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, 0, 44)];
+    UIBarButtonItem *flexibleSpace = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    UIBarButtonItem *done = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemDone
+                             target:self
+                             action:@selector(onValueDoneTapped:)];
+    toolbar.items = @[flexibleSpace, done];
+    tf.inputAccessoryView = toolbar;
 
     [self.contentView addSubview:tf];
 
     [NSLayoutConstraint activateConstraints:@[
         [tf.leadingAnchor constraintEqualToAnchor:self.lblAddress.trailingAnchor constant:8],
+        [tf.trailingAnchor constraintEqualToAnchor:self.btnViewMemory.leadingAnchor constant:-8],
         [tf.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
-        [tf.widthAnchor constraintEqualToConstant:120],
         [tf.heightAnchor constraintEqualToConstant:32]
     ]];
+    [tf addTarget:self action:@selector(onValueEditingEnded:)
+        forControlEvents:UIControlEventEditingDidEnd];
 
     self.tfValue = tf;
 }
@@ -233,7 +227,10 @@
     self.tfValue.text = self.value;
     self.lblValue.hidden = modifying;
     self.tfValue.hidden = !modifying;
-    [self.btnMod setTitle:modifying ? @"OK" : @"M" forState:UIControlStateNormal];
+    if (modifying) {
+        [self.tfValue becomeFirstResponder];
+        [self.tfValue selectAll:nil];
+    }
 }
 
 - (void)setTextFieldDelegate:(id<UITextFieldDelegate>)textFieldDelegate {
@@ -249,17 +246,27 @@
     self.checkbox.selected = checked;
 }
 
-- (void)onModButtonTapped:(id)sender {
-    if (self.modifying) {
-        [self.tfValue resignFirstResponder];
-        NSString *text = self.tfValue.text;
-        if (text.length == 0) return;
+- (void)onValueTapped:(id)sender {
+    if (!self.modifying) {
+        self.modifying = YES;
+    }
+}
+
+- (void)onValueDoneTapped:(id)sender {
+    [self.tfValue resignFirstResponder];
+}
+
+- (void)onValueEditingEnded:(UITextField *)textField {
+    if (!self.modifying) return;
+
+    NSString *text = textField.text;
+    if (text.length > 0 && ![text isEqualToString:self.value]) {
         self.value = text;
         if ([self.delegate respondsToSelector:@selector(DLGMemUIViewCellModify:value:)]) {
-            [self.delegate DLGMemUIViewCellModify:self.address value:self.value];
+            [self.delegate DLGMemUIViewCellModify:self.address value:text];
         }
     }
-    self.modifying = !self.modifying;
+    self.modifying = NO;
 }
 
 - (void)onViewMemoryButtonTapped:(id)sender {
